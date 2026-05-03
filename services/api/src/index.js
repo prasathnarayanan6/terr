@@ -13,7 +13,22 @@ import prepaidRoutes from "./routes/prepaidRoutes.js";
 
 const app = express();
 
-app.use(cors());
+const corsOptions = {
+  origin: [
+    "http://dashboard.terraclime.com",
+    "https://dashboard.terraclime.com",
+  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  credentials: true,
+  optionsSuccessStatus: 200, // Some legacy browsers choke on 204
+};
+
+// Handle preflight requests for ALL routes
+app.options("*", cors(corsOptions));
+
+// Apply CORS to all routes
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.get("/api/healthz", (_req, res) => {
