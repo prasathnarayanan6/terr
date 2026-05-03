@@ -4,7 +4,7 @@ import axios from "axios";
 // (see "proxy" in package.json). This means mobile devices only need port 3000
 // — the computer's dev-server forwards the API calls on their behalf.
 // In production set REACT_APP_API_BASE_URL to the deployed API origin.
-const baseURL = process.env.REACT_APP_API_BASE_URL || "/api";
+const baseURL = process.env.REACT_APP_API_BASE_URL || "https://api.terraclime.com/api";
 
 const apiClient = axios.create({
   baseURL,
