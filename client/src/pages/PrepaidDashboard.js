@@ -55,7 +55,7 @@ function QRModal({ house, zoneId, onClose }) {
   const svgRef = useRef(null);
 
   // Editable base URL — lets admin switch localhost → network IP without a rebuild
-  const [baseUrl, setBaseUrl] = useState("http://192.168.0.103:3000");
+  const [baseUrl, setBaseUrl] = useState("https://dashboard.terraclime.com");
   const payUrl = `${baseUrl.replace(/\/$/, "")}/pay/${house.house_id}?zone=${zoneId}`;
 
   const handleDownload = () => {
