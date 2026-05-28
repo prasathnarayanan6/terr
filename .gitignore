@@ -17,3 +17,4 @@ Thumbs.db
 # AWS local tooling
 .aws-sso/cache
 .dynamodb/
+.aws-sam/

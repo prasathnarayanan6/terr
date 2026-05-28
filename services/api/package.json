@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "seed": "node src/data/seedDemoData.js",
-    "test": "node --test"
+    "test": "node --test",
+    "sam:build": "sam build --template-file template.yaml",
+    "sam:deploy": "sam deploy --guided --template-file template.yaml"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.637.0",

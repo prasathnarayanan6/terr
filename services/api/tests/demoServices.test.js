@@ -1,14 +1,24 @@
-import { describe, it } from "node:test";
+import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { getDashboardOverview } from "../src/services/dashboardService.js";
 import { getReportsOverview, getFlatReport } from "../src/services/reportService.js";
 import { getLeakOverview } from "../src/services/leakService.js";
 import { getBillingSummary } from "../src/services/billingService.js";
+import {
+  getLiveDataByDeviceId,
+  ingestLiveData,
+  LiveDataValidationError,
+  resetLiveDataStore,
+} from "../src/services/liveDataService.js";
 import { demoUsers } from "../src/data/demoData.js";
 
 const demoApartmentId = demoUsers[0].apartment_id;
 
 describe("Demo service layer", () => {
+  beforeEach(() => {
+    resetLiveDataStore();
+  });
+
   it("returns dashboard metrics", () => {
     const overview = getDashboardOverview(demoApartmentId);
     assert.ok(overview.Dashboard_Total_Devices > 0);
@@ -39,5 +49,34 @@ describe("Demo service layer", () => {
     const billing = getBillingSummary(demoApartmentId);
     assert.ok(billing.per_flat.length > 0);
     assert.ok(billing.total_consumption_litres > 0);
+  });
+
+  it("stores live device data", async () => {
+    const payload = {
+      device_id: "device-101",
+      values: Array.from({ length: 24 }, (_, index) => index + 1),
+    };
+
+    const record = await ingestLiveData(payload);
+
+    assert.equal(record.device_id, payload.device_id);
+    assert.ok(record.timestamp);
+    assert.equal(record.value_1, 1);
+    assert.equal(record.value_24, 24);
+    assert.deepEqual(getLiveDataByDeviceId(payload.device_id), record);
+  });
+
+  it("rejects invalid live device payloads", async () => {
+    await assert.rejects(
+      ingestLiveData({ device_id: "device-101", values: "bad-payload" }),
+      LiveDataValidationError
+    );
+  });
+
+  it("rejects live payloads without exactly 24 values", async () => {
+    await assert.rejects(
+      ingestLiveData({ device_id: "device-101", values: [1, 2, 3] }),
+      LiveDataValidationError
+    );
   });
 });

@@ -43,6 +43,41 @@ The API is exposed on `http://localhost:8080/api` and the React client is served
 3. Ensure the runtime has IAM credentials with read/write permissions to the configured tables (via environment, IAM role, or AWS profile).
 4. (Optional) Run `npm run seed` to push the demo admin user/apartment to DynamoDB as a starting point.
 
+## Deploy To Lambda
+
+The Express API already exports a Lambda handler through `serverless-http`, so the MVC structure stays unchanged when deployed.
+
+1. Install AWS SAM CLI.
+2. From `services/api`, build the Lambda package:
+
+```bash
+npm run sam:build
+```
+
+3. Deploy it interactively the first time:
+
+```bash
+npm run sam:deploy
+```
+
+4. Use these parameter values when prompted:
+   - `StageName`: `prod`
+   - `UseDemoData`: `false`
+   - `AwsRegion`: `ap-south-1`
+   - `FlowTable`: `flow_data`
+   - other table names matching your AWS setup
+
+5. After deploy, SAM prints the API Gateway URL. Your live insert route will be:
+
+```text
+https://<api-id>.execute-api.<region>.amazonaws.com/prod/api/data-live
+```
+
+Notes:
+- The SAM template lives at `services/api/template.yaml`.
+- Lambda should use its execution role for DynamoDB access; do not hardcode AWS keys in production.
+- The Lambda handler is `src/index.handler`.
+
 ## Available API Routes
 
 | Method | Route | Description |

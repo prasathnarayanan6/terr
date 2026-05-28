@@ -10,6 +10,7 @@ import billingRoutes from "./routes/billingRoutes.js";
 import billingNotificationRoutes from "./routes/billingNotificationRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import prepaidRoutes from "./routes/prepaidRoutes.js";
+import liveDataRoutes from "./routes/liveDataRoutes.js";
 
 const app = express();
 
@@ -47,12 +48,14 @@ app.use("/api/billing", billingRoutes);
 app.use("/api/bills", billingNotificationRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/prepaid", prepaidRoutes);
+app.use("/", liveDataRoutes);
+app.use("/api", liveDataRoutes);
 
 const isLambda = Boolean(process.env.LAMBDA_TASK_ROOT);
 const isTest = process.env.NODE_ENV === "test";
 
 if (!isLambda && !isTest) {
-  app.listen(appConfig.port, () => {
+  app.listen('8081', () => {
     console.log(
       `Terraclime demo API running on port ${appConfig.port} (demo mode: ${appConfig.demoMode})`
     );
