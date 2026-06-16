@@ -34,6 +34,9 @@ Parameters:
   LeaksTable:
     Type: String
     Default: leak_events
+  PrepaidTable:
+    Type: String
+    Default: prepaid_zones
 
 Globals:
   Function:
@@ -52,6 +55,7 @@ Globals:
         APARTMENT_TABLE: !Ref ApartmentTable
         BILLING_TABLE: !Ref BillingTable
         LEAKS_TABLE: !Ref LeaksTable
+        PREPAID_TABLE: !Ref PrepaidTable
         JWT_SECRET: !Ref JwtSecret
 
 Resources:
@@ -89,6 +93,8 @@ Resources:
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BillingTable}/index/*
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LeaksTable}
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LeaksTable}/index/*
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PrepaidTable}
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PrepaidTable}/index/*
       Events:
         RootRoute:
           Type: Api
@@ -110,3 +116,4 @@ Outputs:
   LiveDataEndpoint:
     Description: POST endpoint for inserting flow_data records.
     Value: !Sub https://${TerraclimeApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/data-live
+

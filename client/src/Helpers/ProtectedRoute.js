@@ -1,8 +1,8 @@
 import { Navigate, Outlet } from "react-router-dom";
 function ProtectedRoutes({ requiredRoles }) {
-  let role = sessionStorage.getItem("role");
-  let token = localStorage.getItem("token");
-  let result = { token: token, role: role };
+  let role = localStorage.getItem("role") || sessionStorage.getItem("role");
+  let token = localStorage.getItem("token") || localStorage.getItem("jwt_token");
+
   if (!token || !role) {
     return <Navigate to="/" />;
   }

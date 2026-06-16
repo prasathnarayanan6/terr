@@ -20,6 +20,7 @@ function Login() {
   });
 
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [inputType, setInputType] = useState("password");
 
   const [eyeOpen, setEyeOpen] = useState(false);
@@ -41,28 +42,40 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLoading) {
+      return;
+    }
+
     setError("");
     if (!formData.user_mail || !formData.user_password) {
       setError("Please enter both email and password.");
       return;
     }
+
+    setIsLoading(true);
     try {
       const result = await loginRequest(formData);
       if (result.status === 200) {
         const { accessToken, role, account_type, apartment, user } = result.data;
 
+        if (!accessToken) {
+          throw new Error("Login response did not include an access token");
+        }
+
+        const userMail = user?.mail || formData.user_mail;
+        const userName = `${user?.first_name || ""} ${user?.last_name || ""}`.trim();
+
         localStorage.setItem("token", accessToken);
-        localStorage.setItem("user_mail", formData.user_mail);
+        localStorage.setItem("jwt_token", accessToken);
+        localStorage.setItem("role", role || "");
+        localStorage.setItem("user_mail", userMail);
         localStorage.setItem("account_type", account_type || "standard");
         localStorage.setItem("apartment_id", apartment?.id || "");
         localStorage.setItem("apartment_name", apartment?.name || "");
-        localStorage.setItem(
-          "user_name",
-          `${user?.first_name || ""} ${user?.last_name || ""}`.trim()
-        );
-        sessionStorage.setItem("role", role);
+        localStorage.setItem("user_name", userName || userMail);
+        sessionStorage.setItem("role", role || "");
 
-        navigate(account_type === "prepaid" ? "/prepaid/overview" : "/overview");
+        navigate("/dashboard", { replace: true });
       }
     } catch (err) {
       console.error("Login failed:", err);
@@ -71,6 +84,8 @@ function Login() {
       } else {
         setError("Unable to reach the server. Please try again in a moment.");
       }
+    } finally {
+      setIsLoading(false);
     }
   };
   return (
@@ -98,6 +113,7 @@ function Login() {
                 name="user_mail"
                 value={formData.user_mail}
                 onChange={handleChange}
+                disabled={isLoading}
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-10 pr-3 text-sm focus:border-[#00A877] focus:outline-none focus:ring-2 focus:ring-[#8AE5C1]/50"
                 placeholder="name@example.com"
               />
@@ -114,7 +130,8 @@ function Login() {
               <button
                 type="button"
                 onClick={handleEyeOpen}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500"
+                disabled={isLoading}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <FontAwesomeIcon icon={eyeOpen ? faEye : faEyeSlash} />
               </button>
@@ -124,6 +141,7 @@ function Login() {
                 name="user_password"
                 value={formData.user_password}
                 onChange={handleChange}
+                disabled={isLoading}
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-10 pr-10 text-sm focus:border-[#00A877] focus:outline-none focus:ring-2 focus:ring-[#8AE5C1]/50"
                 placeholder="Enter your password"
               />
@@ -141,9 +159,14 @@ function Login() {
           )}
           <button
             type="submit"
-            className="w-full rounded-lg bg-[#00A877] py-2 text-white text-sm font-semibold shadow-sm hover:bg-[#008a63] transition-colors"
+            disabled={isLoading}
+            aria-busy={isLoading}
+            className="w-full rounded-lg bg-[#00A877] py-2 text-white text-sm font-semibold shadow-sm hover:bg-[#008a63] transition-colors disabled:cursor-not-allowed disabled:bg-[#72cdb3] flex items-center justify-center gap-2"
           >
-            Sign in
+            {isLoading && (
+              <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+            )}
+            {isLoading ? "Signing in..." : "Sign in"}
           </button>
         </form>
         <div className="pt-4 border-t border-gray-100 text-center space-y-3">

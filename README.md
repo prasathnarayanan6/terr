@@ -95,7 +95,7 @@ All analytics routes accept an optional `apartment_id` query parameter; in demo 
 ## Frontend Notes
 
 - Navigation lives in `SideBar` + `NavBar`; responsive widths auto-adjust when the sidebar collapses.
-- API calls are centralised in `client/src/api/endpoints.js` so swapping environments only requires updating `REACT_APP_API_BASE_URL`.
+- API calls are centralised in `client/src/api/endpoints.js`. Use `REACT_APP_API_BASE_URL` for dashboard data and `REACT_APP_AUTH_API_BASE_URL` for the login service.
 - Demo charts and tables update automatically as soon as the API returns data—no hard-coded placeholders remain.
 - Styling is intentionally light (soft neutrals with green accents) so the focus stays on data clarity.
 

@@ -25,7 +25,7 @@ function App() {
           {/* <Route path="/register" element={<Register />} /> */}
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/pay/:houseId" element={<PaymentPage />} />
-          <Route element={<ProtectedRoutes requiredRoles={["user"]} />}>
+          <Route element={<ProtectedRoutes />}>
             <Route path="/overview" element={<Dashboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/profile" element={<Profile />} />

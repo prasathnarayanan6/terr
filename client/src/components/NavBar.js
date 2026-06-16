@@ -8,6 +8,9 @@ function NavBar() {
   const navigate = useNavigate();
   const handleLogout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("jwt_token");
+    localStorage.removeItem("role");
+    localStorage.removeItem("user_mail");
     localStorage.removeItem("account_type");
     sessionStorage.removeItem("role");
     localStorage.removeItem("apartment_id");

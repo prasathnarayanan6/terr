@@ -1,7 +1,7 @@
-import { apiClient } from "./client";
+import { apiClient, authClient } from "./client";
 
 export const loginRequest = (payload) =>
-  apiClient.post("/auth/login", payload);
+  authClient.post("/auth/login", payload);
 
 export const fetchDashboardOverview = (apartmentId) =>
   apiClient.get("/dashboard/overview", {
