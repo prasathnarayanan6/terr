@@ -25,6 +25,9 @@ Parameters:
   FlowTable:
     Type: String
     Default: flow_data
+  DeviceTable:
+    Type: String
+    Default: device_data
   ApartmentTable:
     Type: String
     Default: apartment_data
@@ -52,6 +55,7 @@ Globals:
         AWS_REGION: !Ref AwsRegion
         USERS_TABLE: !Ref UsersTable
         FLOW_TABLE: !Ref FlowTable
+        DEVICE_TABLE: !Ref DeviceTable
         APARTMENT_TABLE: !Ref ApartmentTable
         BILLING_TABLE: !Ref BillingTable
         LEAKS_TABLE: !Ref LeaksTable
@@ -87,6 +91,8 @@ Resources:
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${UsersTable}/index/*
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${FlowTable}
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${FlowTable}/index/*
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DeviceTable}
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DeviceTable}/index/*
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ApartmentTable}
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ApartmentTable}/index/*
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BillingTable}

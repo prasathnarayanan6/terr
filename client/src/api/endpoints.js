@@ -1,4 +1,4 @@
-import { apiClient, authClient } from "./client";
+import { apiClient, authClient, reportsClient } from "./client";
 
 export const loginRequest = (payload) =>
   authClient.post("/auth/login", payload);
@@ -9,12 +9,12 @@ export const fetchDashboardOverview = (apartmentId) =>
   });
 
 export const fetchReportsOverview = (apartmentId) =>
-  apiClient.get("/reports/overview", {
+  reportsClient.get("/reports/overview", {
     params: { apartment_id: apartmentId },
   });
 
 export const fetchFlatReport = (apartmentId, flatId) =>
-  apiClient.get(`/reports/flats/${flatId}`, {
+  reportsClient.get(`/reports/flats/${flatId}`, {
     params: { apartment_id: apartmentId },
   });
 

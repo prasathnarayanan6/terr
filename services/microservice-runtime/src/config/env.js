@@ -15,6 +15,7 @@ export const appConfig = {
   tables: {
     users: process.env.USERS_TABLE || "UserCredentials",
     flow: process.env.FLOW_TABLE || "flow_data",
+    devices: process.env.DEVICE_TABLE || "device_data",
     apartments: process.env.APARTMENT_TABLE || "apartment_data",
     billing: process.env.BILLING_TABLE || "billing_cycles",
     leaks: process.env.LEAKS_TABLE || "leak_events",

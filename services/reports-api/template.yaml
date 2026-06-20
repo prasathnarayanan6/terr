@@ -8,7 +8,7 @@ Parameters:
     Default: prod
   UseDemoData:
     Type: String
-    Default: "true"
+    Default: "false"
     AllowedValues:
       - "true"
       - "false"
@@ -21,6 +21,9 @@ Parameters:
   FlowTable:
     Type: String
     Default: flow_data
+  DeviceTable:
+    Type: String
+    Default: device_data
   ApartmentTable:
     Type: String
     Default: apartment_data
@@ -30,6 +33,14 @@ Parameters:
   LeaksTable:
     Type: String
     Default: leak_events
+  CustomDomainName:
+    Type: String
+    Default: reports.terraclime.com
+    Description: Custom domain name for the reports API.
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate ARN for CustomDomainName.
 
 Globals:
   Function:
@@ -42,9 +53,9 @@ Globals:
       Variables:
         NODE_ENV: production
         USE_DEMO_DATA: !Ref UseDemoData
-        AWS_REGION: !Ref AwsRegion
         USERS_TABLE: !Ref UsersTable
         FLOW_TABLE: !Ref FlowTable
+        DEVICE_TABLE: !Ref DeviceTable
         APARTMENT_TABLE: !Ref ApartmentTable
         BILLING_TABLE: !Ref BillingTable
         LEAKS_TABLE: !Ref LeaksTable
@@ -54,6 +65,11 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref StageName
+      Domain:
+        DomainName: !Ref CustomDomainName
+        CertificateArn: !Ref CertificateArn
+        EndpointConfiguration: REGIONAL
+        SecurityPolicy: TLS_1_2
 
   ReportsFunction:
     Type: AWS::Serverless::Function
@@ -74,6 +90,8 @@ Resources:
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${UsersTable}/index/*
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${FlowTable}
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${FlowTable}/index/*
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DeviceTable}
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DeviceTable}/index/*
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ApartmentTable}
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ApartmentTable}/index/*
                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BillingTable}
@@ -98,8 +116,14 @@ Outputs:
   ReportsBaseUrl:
     Description: Base URL for the deployed reports API stage.
     Value: !Sub https://${ReportsApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+  ReportsCustomBaseUrl:
+    Description: Custom HTTPS base URL for the deployed reports API.
+    Value: !Sub https://${CustomDomainName}
   ReportsOverviewEndpoint:
     Description: GET endpoint for reports overview.
     Value: !Sub https://${ReportsApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/reports/overview
+  ReportsCustomOverviewEndpoint:
+    Description: Custom HTTPS GET endpoint for reports overview.
+    Value: !Sub https://${CustomDomainName}/api/reports/overview
 
 

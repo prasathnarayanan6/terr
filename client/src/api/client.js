@@ -5,7 +5,10 @@ import axios from "axios";
 // because the computer's dev-server forwards the API calls on their behalf.
 // In production set REACT_APP_API_BASE_URL to the deployed API origin.
 // Set REACT_APP_AUTH_API_BASE_URL when auth is deployed to a different origin.
-const baseURL = process.env.REACT_APP_API_BASE_URL || "https://api.terraclime.com/api";
+//const baseURL = process.env.REACT_APP_API_BASE_URL || "https://api.terraclime.com/api";
+const baseURL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8080/api";
+const reportsBaseURL =
+  process.env.REACT_APP_REPORTS_API_BASE_URL || "https://reports.terraclime.com/api";
 const authBaseURL =
   process.env.REACT_APP_AUTH_API_BASE_URL || "https://auth.terraclime.com/api";
 
@@ -19,6 +22,11 @@ const authClient = axios.create({
   timeout: 10000,
 });
 
+const reportsClient = axios.create({
+  baseURL: reportsBaseURL,
+  timeout: 10000,
+});
+
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -27,4 +35,12 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-export { apiClient, authClient, baseURL, authBaseURL };
+reportsClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export { apiClient, authClient, reportsClient, baseURL, authBaseURL, reportsBaseURL };
