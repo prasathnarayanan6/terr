@@ -19,6 +19,7 @@ export const appConfig = {
     apartments: process.env.APARTMENT_TABLE || "apartment_data",
     billing: process.env.BILLING_TABLE || "billing_cycles",
     leaks: process.env.LEAKS_TABLE || "leak_events",
+    tariffs: process.env.TARIFF_TABLE || "tariff_configs",
     prepaid: process.env.PREPAID_TABLE || "prepaid_zones",
   },
 };

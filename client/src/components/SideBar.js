@@ -6,7 +6,6 @@ import terraclimesymbol from "../Utils/Images/Logo - Website(1)(1).png";
 const standardNavItems = [
   { label: "Overview", path: "/dashboard" },
   { label: "Reports", path: "/reports" },
-  { label: "Leaks", path: "/leaks" },
   { label: "Billing", path: "/current-billingcycle" },
   { label: "Settings", path: "/settings" },
 ];

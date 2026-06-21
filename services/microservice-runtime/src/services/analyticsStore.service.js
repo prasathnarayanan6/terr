@@ -115,52 +115,37 @@ const matchCycleRecord = (record, cycleId) => {
   return candidates.includes(String(cycleId));
 };
 
-const buildCycleSeries = (dailyTotals, billingCycle) => {
-  const currentStart = billingCycle?.period_start;
-  const currentEnd = billingCycle?.period_end;
+const toIsoDate = (date) => date.toISOString().slice(0, 10);
 
-  if (!currentStart || !currentEnd) {
-    const labels = Array.from(dailyTotals.keys()).sort(sortByIsoDate);
-    return {
-      current: {
-        labels,
-        values: labels.map((date) => dailyTotals.get(date) || 0),
-      },
-    };
-  }
+const getCalendarMonthBounds = (monthsAgo, baseDate = new Date()) => {
+  const start = new Date(
+    Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() - monthsAgo, 1)
+  );
+  const end = new Date(
+    Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() - monthsAgo + 1, 0)
+  );
 
-  const buildSeries = (startDate, endDate) => {
+  return {
+    startDate: toIsoDate(start),
+    endDate: toIsoDate(end),
+  };
+};
+
+const buildCycleSeries = (dailyTotals) => {
+  const buildSeries = (monthsAgo) => {
+    const { startDate, endDate } = getCalendarMonthBounds(monthsAgo);
     const labels = buildDateRange(startDate, endDate);
+
     return {
       labels,
       values: labels.map((date) => dailyTotals.get(date) || 0),
     };
   };
 
-  const currentSeries = buildSeries(currentStart, currentEnd);
-  const start = new Date(`${currentStart}T00:00:00Z`);
-  const end = new Date(`${currentEnd}T00:00:00Z`);
-
-  const previousOneStart = new Date(start);
-  const previousOneEnd = new Date(end);
-  previousOneStart.setUTCMonth(previousOneStart.getUTCMonth() - 1);
-  previousOneEnd.setUTCMonth(previousOneEnd.getUTCMonth() - 1);
-
-  const previousTwoStart = new Date(start);
-  const previousTwoEnd = new Date(end);
-  previousTwoStart.setUTCMonth(previousTwoStart.getUTCMonth() - 2);
-  previousTwoEnd.setUTCMonth(previousTwoEnd.getUTCMonth() - 2);
-
   return {
-    current: currentSeries,
-    "previous-1": buildSeries(
-      previousOneStart.toISOString().slice(0, 10),
-      previousOneEnd.toISOString().slice(0, 10)
-    ),
-    "previous-2": buildSeries(
-      previousTwoStart.toISOString().slice(0, 10),
-      previousTwoEnd.toISOString().slice(0, 10)
-    ),
+    current: buildSeries(0),
+    "previous-1": buildSeries(1),
+    "previous-2": buildSeries(2),
   };
 };
 
@@ -324,6 +309,21 @@ const buildDailySeriesFromMap = (dailyMap = new Map(), fallbackSeries = []) => {
   return Array.isArray(fallbackSeries) ? fallbackSeries : [];
 };
 
+const buildApartmentDailyTotals = (flats = []) => {
+  const dailyTotals = new Map();
+
+  flats.forEach((flat) => {
+    (flat.daily_consumption || []).forEach((entry) => {
+      const date = normalizeIsoDate(entry.date);
+      if (!date) return;
+
+      dailyTotals.set(date, (dailyTotals.get(date) || 0) + toFiniteNumber(entry.litres, 0));
+    });
+  });
+
+  return dailyTotals;
+};
+
 const enrichFlat = (flat, userLookup, flatDaily, flatDevices, flatLeaks) => {
   const flatId = String(flat?.flat_id || flat?.flatId || "").trim();
   const flatKey = flatId.toLowerCase();
@@ -402,13 +402,15 @@ const resolveBillingRecord = async (apartmentId, apartmentCycle) => {
 
 export const getAnalyticsSnapshot = async (apartmentId) => {
   if (appConfig.demoMode) {
+    const dailyTotals = buildApartmentDailyTotals(demoApartment.flats);
+
     return {
       apartment_id: demoApartment.apartment_id,
       apartment_name: demoApartment.apartment_name,
       address: demoApartment.address,
       billing_cycle: demoApartment.billing_cycle,
       flats: demoApartment.flats,
-      cycle_series: demoApartment.cycle_series,
+      cycle_series: buildCycleSeries(dailyTotals),
       finance: demoBilling,
     };
   }
@@ -494,7 +496,7 @@ export const getAnalyticsSnapshot = async (apartmentId) => {
     address: apartment.address,
     billing_cycle: billingCycle,
     flats: enrichedFlats,
-    cycle_series: buildCycleSeries(apartmentDaily, billingCycle),
+    cycle_series: buildCycleSeries(apartmentDaily),
     finance: billingRecord || demoBilling,
   };
 };

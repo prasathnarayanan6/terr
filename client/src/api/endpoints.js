@@ -1,12 +1,26 @@
-import { apiClient, authClient, reportsClient } from "./client";
+import {
+  apiClient,
+  authClient,
+  dashboardClient,
+  profileClient,
+  reportsClient,
+} from "./client";
 
 export const loginRequest = (payload) =>
   authClient.post("/auth/login", payload);
 
 export const fetchDashboardOverview = (apartmentId) =>
-  apiClient.get("/dashboard/overview", {
+  dashboardClient.get("/dashboard/overview", {
     params: { apartment_id: apartmentId },
   });
+
+export const fetchDashboardTariff = (apartmentId, cycleId) =>
+  dashboardClient.get("/dashboard/tariff", {
+    params: { apartment_id: apartmentId, cycle_id: cycleId },
+  });
+
+export const saveDashboardTariff = (payload) =>
+  dashboardClient.put("/dashboard/tariff", payload);
 
 export const fetchReportsOverview = (apartmentId) =>
   reportsClient.get("/reports/overview", {
@@ -29,7 +43,7 @@ export const fetchBillingSummary = (apartmentId) =>
   });
 
 export const fetchProfile = (userMail) =>
-  apiClient.get("/profile", {
+  profileClient.get("/profile/settings", {
     params: { user_mail: userMail },
   });
 

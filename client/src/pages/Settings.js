@@ -19,6 +19,9 @@ function Settings() {
         setLoading(true);
         setError("");
         const userMail = localStorage.getItem("user_mail");
+        if (!userMail) {
+          throw new Error("Missing logged-in user email");
+        }
         const response = await fetchProfile(userMail);
         setProfile(response.data);
       } catch (err) {
@@ -61,7 +64,12 @@ function Settings() {
                 <p className="text-xs uppercase text-gray-500">Name</p>
                 <p className="text-lg font-semibold text-gray-900 mt-1">
                   {profile
-                    ? `${profile.user.first_name} ${profile.user.last_name}`
+                    ? profile.user.user_name ||
+                      profile.user.name ||
+                      `${profile.user.first_name || ""} ${
+                        profile.user.last_name || ""
+                      }`.trim() ||
+                      "-"
                     : loading
                     ? "Loading..."
                     : "-"}
@@ -75,6 +83,10 @@ function Settings() {
                 <p className="text-lg font-semibold text-gray-900 mt-1">
                   {profile?.user?.role || "-"}
                 </p>
+                <p className="text-sm text-gray-500 mt-2">
+                  {profile?.user?.account_type || ""}
+                  {profile?.user?.status ? ` / ${profile.user.status}` : ""}
+                </p>
               </div>
               <div className="border border-gray-100 rounded-xl p-4">
                 <p className="text-xs uppercase text-gray-500">Apartment</p>
@@ -82,18 +94,16 @@ function Settings() {
                   {profile?.apartment?.name || "-"}
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
-                  {profile?.apartment?.address || ""}
+                  {profile?.apartment?.id || ""}
                 </p>
               </div>
               <div className="border border-gray-100 rounded-xl p-4">
-                <p className="text-xs uppercase text-gray-500">Billing cycle</p>
+                <p className="text-xs uppercase text-gray-500">Account</p>
                 <p className="text-lg font-semibold text-gray-900 mt-1">
-                  {profile?.apartment?.billing_cycle?.label || "-"}
+                  {profile?.user?.account_type || "-"}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  {profile?.apartment?.billing_cycle
-                    ? `${profile.apartment.billing_cycle.period_start} → ${profile.apartment.billing_cycle.period_end}`
-                    : ""}
+                  {profile?.user?.flat_id ? `Flat ${profile.user.flat_id}` : ""}
                 </p>
               </div>
             </div>

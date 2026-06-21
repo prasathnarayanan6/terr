@@ -23,6 +23,7 @@ copied from `services/api/src`, so the frontend contract stays unchanged.
 - `billing-api`: `http://127.0.0.1:8090/api/billing/summary`
 - `bills-api`: `http://127.0.0.1:8091/api/bills/send-bulk`
 - `profile-api`: `http://127.0.0.1:8092/api/profile`
+- `profile-api` settings data: `http://127.0.0.1:8092/api/profile/settings?user_mail=<user_mail-from-UserCredentials>`
 - `prepaid-api`: `http://127.0.0.1:8093/api/prepaid/overview`
 
 ## Run locally

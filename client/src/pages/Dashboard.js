@@ -12,16 +12,42 @@ import {
   MoneySafeIcon,
 } from "hugeicons-react";
 import BarChartComponent from "../components/Chart";
-import LeaksAcrossBlocks from "../components/LeaksAcrossBlocks";
+// import LeaksAcrossBlocks from "../components/LeaksAcrossBlocks";
 import {
   fetchDashboardOverview,
-  fetchLeakSummary,
+  fetchDashboardTariff,
+  saveDashboardTariff,
 } from "../api/endpoints";
 
 const TARIFF_STORAGE_KEY = "current_tariff";
 const TARIFF_SOURCES_STORAGE_KEY = "current_tariff_sources";
 
 const formatCurrency = (value) => `\u20B9${value.toLocaleString("en-IN")}`;
+
+const toLocalIsoDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const buildCalendarCycleOptions = (baseDate = new Date()) =>
+  [
+    { id: "current", label: "Current Billing Cycle", monthsAgo: 0 },
+    { id: "previous-1", label: "Last Month Billing Cycle", monthsAgo: 1 },
+    { id: "previous-2", label: "Two Months Ago Billing Cycle", monthsAgo: 2 },
+  ].map((cycle) => {
+    const start = new Date(baseDate.getFullYear(), baseDate.getMonth() - cycle.monthsAgo, 1);
+    const end = new Date(baseDate.getFullYear(), baseDate.getMonth() - cycle.monthsAgo + 1, 0);
+
+    return {
+      id: cycle.id,
+      label: cycle.label,
+      period_start: toLocalIsoDate(start),
+      period_end: toLocalIsoDate(end),
+    };
+  });
 
 const createTariffSource = (index, name, volume, rate) => ({
   id: `source-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
@@ -71,6 +97,31 @@ const parseStoredTariffSources = (rawValue, fallbackTariff) => {
   }
 };
 
+const normalizeTariffSources = (sources, fallbackTariff) => {
+  if (!Array.isArray(sources) || !sources.length) {
+    return buildDefaultTariffSources(fallbackTariff);
+  }
+
+  const normalized = sources
+    .map((source, index) => ({
+      id: source?.id || createTariffSource(index, "", "", "").id,
+      name: source?.name || `Source ${index + 1}`,
+      volume:
+        source?.volume === 0 || source?.volume
+          ? String(source.volume)
+          : "",
+      rate:
+        source?.rate === 0 || source?.rate
+          ? String(source.rate)
+          : "",
+    }))
+    .filter((source) => source.name || source.volume || source.rate);
+
+  return normalized.length
+    ? normalized
+    : buildDefaultTariffSources(fallbackTariff);
+};
+
 const computeBlendedRate = (sources, fallbackTariff) => {
   const totals = sources.reduce(
     (accumulator, source) => {
@@ -99,7 +150,6 @@ const computeBlendedRate = (sources, fallbackTariff) => {
 function Dashboard() {
   const [buttonOpen, setButtonOpen] = useState(true);
   const [dashboardData, setDashboardData] = useState(null);
-  const [leakData, setLeakData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedCycle, setSelectedCycle] = useState("current");
@@ -108,6 +158,7 @@ function Dashboard() {
   const [tariffSources, setTariffSources] = useState([]);
   const [isTariffEditorOpen, setIsTariffEditorOpen] = useState(false);
   const tariffEditorRef = useRef(null);
+  const loadedTariffCycleRef = useRef("");
 
   const handleButtonOpen = () => {
     setButtonOpen(!buttonOpen);
@@ -128,22 +179,91 @@ function Dashboard() {
     [dashboardData]
   );
 
-  useEffect(() => {
-    if (!dashboardData?.apartment?.billing_cycle) return;
+  const formatRange = (start, end) => {
+    const formatter = new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+    });
+    return `${formatter.format(start)} - ${formatter.format(end)}`;
+  };
 
-    if (selectedCycle === "current") {
-      const storedSources = localStorage.getItem(TARIFF_SOURCES_STORAGE_KEY);
-      setTariffSources(parseStoredTariffSources(storedSources, defaultTariff));
+  const cycleOptions = useMemo(() => {
+    const cycles = dashboardData?.billing_cycles?.length
+      ? dashboardData.billing_cycles
+      : buildCalendarCycleOptions();
+
+    return cycles.map((cycle) => ({
+      ...cycle,
+      label: `${cycle.label} (${formatRange(
+        new Date(`${cycle.period_start}T00:00:00`),
+        new Date(`${cycle.period_end}T00:00:00`)
+      )})`,
+    }));
+  }, [dashboardData]);
+
+  const selectedCycleMeta = useMemo(
+    () => cycleOptions.find((option) => option.id === selectedCycle),
+    [cycleOptions, selectedCycle]
+  );
+
+  const selectedCycleId = useMemo(() => {
+    const periodStart =
+      selectedCycleMeta?.period_start ||
+      dashboardData?.apartment?.billing_cycle?.period_start;
+
+    return periodStart ? periodStart.slice(0, 7) : "";
+  }, [selectedCycleMeta, dashboardData]);
+
+  useEffect(() => {
+    if (!dashboardData?.apartment?.billing_cycle || !selectedCycleId) return;
+
+    if (selectedCycle !== "current") {
+      loadedTariffCycleRef.current = "";
+      setTariffSources([
+        createTariffSource(0, "Default tariff", "100", String(defaultTariff || "")),
+      ]);
       return;
     }
 
-    setTariffSources([
-      createTariffSource(0, "Default tariff", "100", String(defaultTariff || "")),
-    ]);
-  }, [selectedCycle, dashboardData, defaultTariff]);
+    let isCurrent = true;
+
+    const loadTariffSources = async () => {
+      const apartmentId = localStorage.getItem("apartment_id");
+
+      try {
+        const result = await fetchDashboardTariff(apartmentId, selectedCycleId);
+        if (!isCurrent) return;
+
+        const remoteSources = normalizeTariffSources(
+          result.data?.sources,
+          defaultTariff
+        );
+        setTariffSources(remoteSources);
+        loadedTariffCycleRef.current = selectedCycleId;
+      } catch (error) {
+        if (!isCurrent) return;
+
+        const storedSources = localStorage.getItem(TARIFF_SOURCES_STORAGE_KEY);
+        setTariffSources(parseStoredTariffSources(storedSources, defaultTariff));
+        loadedTariffCycleRef.current = selectedCycleId;
+      }
+    };
+
+    loadTariffSources();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [selectedCycle, selectedCycleId, dashboardData, defaultTariff]);
 
   useEffect(() => {
-    if (selectedCycle !== "current") return;
+    if (
+      selectedCycle !== "current" ||
+      !selectedCycleId ||
+      loadedTariffCycleRef.current !== selectedCycleId
+    ) {
+      return;
+    }
 
     const blendedRate = computeBlendedRate(tariffSources, defaultTariff);
 
@@ -159,7 +279,21 @@ function Dashboard() {
     } else {
       localStorage.removeItem(TARIFF_STORAGE_KEY);
     }
-  }, [tariffSources, selectedCycle, defaultTariff]);
+
+    const saveTimer = window.setTimeout(() => {
+      const apartmentId = localStorage.getItem("apartment_id");
+      saveDashboardTariff({
+        apartment_id: apartmentId,
+        cycle_id: selectedCycleId,
+        sources: tariffSources,
+        blended_rate: blendedRate,
+      }).catch((error) => {
+        console.error("Failed to save tariff configuration", error);
+      });
+    }, 500);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [tariffSources, selectedCycle, selectedCycleId, defaultTariff]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -174,45 +308,6 @@ function Dashboard() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const formatRange = (start, end) => {
-    const formatter = new Intl.DateTimeFormat("en-IN", {
-      day: "2-digit",
-      month: "short",
-    });
-    return `${formatter.format(start)} - ${formatter.format(end)}`;
-  };
-
-  const cycleOptions = useMemo(() => {
-    const cycle = dashboardData?.apartment?.billing_cycle;
-    if (!cycle) return [];
-
-    const currentStart = new Date(cycle.period_start);
-    const currentEnd = new Date(cycle.period_end);
-
-    const buildLabel = (prefix, start, end) =>
-      `${prefix} (${formatRange(start, end)})`;
-
-    const options = [
-      {
-        id: "current",
-        label: buildLabel("Current Cycle", currentStart, currentEnd),
-      },
-    ];
-
-    for (let index = 1; index <= 2; index += 1) {
-      const prevStart = new Date(currentStart);
-      prevStart.setMonth(prevStart.getMonth() - index);
-      const prevEnd = new Date(currentEnd);
-      prevEnd.setMonth(prevEnd.getMonth() - index);
-      options.push({
-        id: `previous-${index}`,
-        label: buildLabel(`Previous Cycle ${index}`, prevStart, prevEnd),
-      });
-    }
-
-    return options;
-  }, [dashboardData]);
 
   const cycleSeriesData = useMemo(() => {
     if (!dashboardData?.cycle_series) {
@@ -286,23 +381,27 @@ function Dashboard() {
   }, [formattedDailySeries.values]);
 
   const hourlySeries = useMemo(() => {
+    const apiHourlySeries =
+      dashboardData?.hourly_series?.[selectedCycle]?.[hourlyDate];
+
+    if (apiHourlySeries?.labels?.length) {
+      return {
+        labels: apiHourlySeries.labels,
+        values: apiHourlySeries.values.map((value) =>
+          Number((value / 1000).toFixed(2))
+        ),
+      };
+    }
+
     if (!formattedDailySeries.values.length || !hourlyDate) {
       return { labels: [], values: [] };
     }
 
-    const index = formattedDailySeries.isoLabels.indexOf(hourlyDate);
-    const litreValue = index >= 0 ? cycleSeriesData.values[index] : 0;
-    const baseKL = litreValue ? litreValue / 1000 : 0;
-    const hours = Array.from({ length: 24 }, (_, hour) => hour);
-    const values = hours.map((hour) =>
-      Number((baseKL / 24 + (baseKL / 24) * 0.35 * Math.sin(hour / 3)).toFixed(2))
-    );
-
     return {
-      labels: hours.map((hour) => `${hour.toString().padStart(2, "0")}:00`),
-      values,
+      labels: [],
+      values: [],
     };
-  }, [formattedDailySeries, hourlyDate, cycleSeriesData.values]);
+  }, [dashboardData, selectedCycle, hourlyDate, formattedDailySeries.values.length]);
 
   const chartSeries = useMemo(() => {
     if (granularity === "weekly") return weeklySeries;
@@ -339,7 +438,6 @@ function Dashboard() {
 
   const totalMeters = Number(dashboardData?.Dashboard_Total_Devices || 0);
   const activeMeters = Number(dashboardData?.Active_devices || 0);
-  const leakBreakdown = leakData?.summary?.blocks || [];
   const activeTariffSources = tariffSources.filter(
     (source) => source.name || source.volume || source.rate
   );
@@ -388,12 +486,8 @@ function Dashboard() {
       setLoading(true);
       setError("");
       const apartmentId = localStorage.getItem("apartment_id");
-      const [dashboardResult, leakResult] = await Promise.all([
-        fetchDashboardOverview(apartmentId),
-        fetchLeakSummary(apartmentId),
-      ]);
+      const dashboardResult = await fetchDashboardOverview(apartmentId);
       setDashboardData(dashboardResult.data);
-      setLeakData(leakResult.data);
     } catch (err) {
       console.error(err);
       setError("Unable to load dashboard data right now.");
@@ -680,8 +774,8 @@ function Dashboard() {
                 Loading dashboard...
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                <div className="col-span-2 bg-white rounded-2xl p-4 shadow-sm">
+              <div className="grid grid-cols-1 gap-5">
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
                     <h2 className="font-semibold text-gray-900">
                       Consumption trend
@@ -733,7 +827,7 @@ function Dashboard() {
                     />
                   )}
                 </div>
-                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                {/* <div className="bg-white rounded-2xl p-4 shadow-sm">
                   <div className="flex justify-between items-center mb-3">
                     <div>
                       <h2 className="font-semibold text-gray-900">
@@ -745,7 +839,7 @@ function Dashboard() {
                     </div>
                   </div>
                   <LeaksAcrossBlocks blocks={leakBreakdown} />
-                </div>
+                </div> */}
               </div>
             )}
           </section>

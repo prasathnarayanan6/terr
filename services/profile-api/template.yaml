@@ -30,6 +30,14 @@ Parameters:
   LeaksTable:
     Type: String
     Default: leak_events
+  CustomDomainName:
+    Type: String
+    Default: profile.terraclime.com
+    Description: Custom domain name for the profile API.
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate ARN for CustomDomainName.
 
 Globals:
   Function:
@@ -42,7 +50,6 @@ Globals:
       Variables:
         NODE_ENV: production
         USE_DEMO_DATA: !Ref UseDemoData
-        AWS_REGION: !Ref AwsRegion
         USERS_TABLE: !Ref UsersTable
         FLOW_TABLE: !Ref FlowTable
         APARTMENT_TABLE: !Ref ApartmentTable
@@ -54,6 +61,11 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref StageName
+      Domain:
+        DomainName: !Ref CustomDomainName
+        CertificateArn: !Ref CertificateArn
+        EndpointConfiguration: REGIONAL
+        SecurityPolicy: TLS_1_2
 
   ProfileFunction:
     Type: AWS::Serverless::Function
@@ -98,8 +110,14 @@ Outputs:
   ProfileBaseUrl:
     Description: Base URL for the deployed profile API stage.
     Value: !Sub https://${ProfileApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+  ProfileCustomBaseUrl:
+    Description: Custom HTTPS base URL for the deployed profile API.
+    Value: !Sub https://${CustomDomainName}
   ProfileEndpoint:
     Description: GET endpoint for profile lookup.
     Value: !Sub https://${ProfileApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/profile
+  ProfileCustomEndpoint:
+    Description: Custom HTTPS GET endpoint for profile lookup.
+    Value: !Sub https://${CustomDomainName}/api/profile
 
 
