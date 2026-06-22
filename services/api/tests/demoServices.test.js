@@ -107,7 +107,14 @@ describe("Demo service layer", () => {
   it("returns billing summary", async () => {
     const billing = await getBillingSummary(demoApartmentId);
     assert.ok(billing.per_flat.length > 0);
+    assert.deepEqual(billing.per_flat_summary, billing.per_flat);
+    assert.equal(billing.summary.total_flats, billing.per_flat.length);
     assert.ok(billing.total_consumption_litres > 0);
+    assert.equal(
+      billing.summary.total_consumption_litres,
+      billing.total_consumption_litres
+    );
+    assert.equal(billing.summary.tariff_per_kl, billing.tariff_per_kl);
   });
 
   it("stores live device data", async () => {

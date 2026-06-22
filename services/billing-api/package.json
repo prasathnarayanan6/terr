@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node ../microservice-runtime/billing-api/src/index.js",
+    "start:demo": "node -e \"process.env.USE_DEMO_DATA='true'; import('../microservice-runtime/billing-api/src/index.js')\"",
+    "start:live": "node -e \"process.env.USE_DEMO_DATA='false'; import('../microservice-runtime/billing-api/src/index.js')\"",
     "sam:build": "sam build --template-file template.yaml",
     "sam:deploy": "sam deploy --guided --template-file template.yaml"
   }

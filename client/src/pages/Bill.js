@@ -5,6 +5,11 @@ import { fetchBillingSummary, sendFlatBill, sendBulkBills } from "../api/endpoin
 
 const formatCurrency = (value) => `\u20B9${value.toLocaleString("en-IN")}`;
 
+const getBillingSummaryTotals = (billing) => billing?.summary || billing || {};
+
+const getPerFlatSummary = (billing) =>
+  billing?.per_flat_summary || billing?.per_flat || [];
+
 const escapeCsvValue = (value) => {
   const normalized = value ?? "";
   const stringValue = String(normalized);
@@ -92,9 +97,10 @@ function Bill() {
   }, [billing]);
 
   const blockOptions = useMemo(() => {
-    if (!billing?.per_flat) return [];
+    const perFlatSummary = getPerFlatSummary(billing);
+    if (!perFlatSummary.length) return [];
     const unique = Array.from(
-      new Set(billing.per_flat.map((entry) => entry.block_id))
+      new Set(perFlatSummary.map((entry) => entry.block_id))
     );
     return unique.sort();
   }, [billing]);
@@ -107,13 +113,15 @@ function Bill() {
   }, [selectedCycle]);
 
   const filteredFlats = useMemo(() => {
-    if (!billing?.per_flat) return [];
-    if (selectedBlock === "all") return billing.per_flat;
-    return billing.per_flat.filter((entry) => entry.block_id === selectedBlock);
+    const perFlatSummary = getPerFlatSummary(billing);
+    if (!perFlatSummary.length) return [];
+    if (selectedBlock === "all") return perFlatSummary;
+    return perFlatSummary.filter((entry) => entry.block_id === selectedBlock);
   }, [billing, selectedBlock]);
 
   const effectiveTariff = useMemo(() => {
-    const defaultTariff = billing?.tariff_per_kl || 0;
+    const summary = getBillingSummaryTotals(billing);
+    const defaultTariff = summary.tariff_per_kl || 0;
     if (selectedCycle !== "current") {
       return defaultTariff;
     }
@@ -138,8 +146,9 @@ function Bill() {
   }, [filteredFlats, effectiveTariff, cycleFactor]);
 
   const totalConsumptionForCycle = useMemo(() => {
-    if (!billing?.total_consumption_litres) return 0;
-    return Math.round(billing.total_consumption_litres * cycleFactor);
+    const summary = getBillingSummaryTotals(billing);
+    if (!summary.total_consumption_litres) return 0;
+    return Math.round(summary.total_consumption_litres * cycleFactor);
   }, [billing, cycleFactor]);
 
   const cycleId = billing?.billing_cycle?.period_start || "";
@@ -323,7 +332,7 @@ function Bill() {
                   title={selectedCycle !== "current" ? "Bulk send is only available for the current cycle." : "Send bills to all visible flats via email."}
                   className="rounded-lg bg-[#00A877] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#008f64] disabled:cursor-not-allowed disabled:bg-[#9dd8c4]"
                 >
-                  {bulkSending ? "Sending…" : "Send bill"}
+                  {bulkSending ? "Sending..." : "Send bill"}
                 </button>
               </div>
             </div>
@@ -410,7 +419,7 @@ function Bill() {
                                 type="button"
                                 onClick={() => handleSendFlatBill(entry.flat_id)}
                                 className="text-xs font-medium text-red-500 underline hover:text-red-700"
-                                title="Send failed — click to retry"
+                                title="Send failed - click to retry"
                               >
                                 Retry
                               </button>
@@ -422,7 +431,7 @@ function Bill() {
                                 title={selectedCycle !== "current" ? "Mail can only be sent for the current cycle." : `Send bill to ${entry.resident_name}`}
                                 className="rounded-md border border-[#00A877] px-3 py-1 text-xs font-medium text-[#00A877] transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                               >
-                                {sendStatus === "sending" ? "Sending…" : "Send"}
+                                {sendStatus === "sending" ? "Sending..." : "Send"}
                               </button>
                             )}
                           </td>

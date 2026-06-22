@@ -41,6 +41,10 @@ cd services/dashboard-api
 npm start
 ```
 
+`billing-api` starts in DynamoDB mode by default. Use `npm run start:demo`
+inside `services/billing-api` only when you intentionally want the offline
+sample dataset.
+
 ## Build and deploy
 
 Each service folder includes its own SAM template:

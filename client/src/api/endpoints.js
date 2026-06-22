@@ -1,6 +1,7 @@
 import {
   apiClient,
   authClient,
+  billingClient,
   dashboardClient,
   profileClient,
   reportsClient,
@@ -38,7 +39,7 @@ export const fetchLeakSummary = (apartmentId) =>
   });
 
 export const fetchBillingSummary = (apartmentId) =>
-  apiClient.get("/billing/summary", {
+  billingClient.get("/billing/summary", {
     params: { apartment_id: apartmentId },
   });
 

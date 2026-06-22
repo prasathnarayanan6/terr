@@ -11,6 +11,9 @@ const reportsBaseURL =
   process.env.REACT_APP_REPORTS_API_BASE_URL || "https://reports.terraclime.com/api";
 const dashboardBaseURL =
   process.env.REACT_APP_DASHBOARD_API_BASE_URL || "https://overview.terraclime.com/api";
+const billingBaseURL =
+  process.env.REACT_APP_BILLING_API_BASE_URL ||
+  (process.env.NODE_ENV === "development" ? "http://localhost:8090/api" : baseURL);
 const authBaseURL =
   process.env.REACT_APP_AUTH_API_BASE_URL || "https://auth.terraclime.com/api";
 const profileBaseURL =
@@ -33,6 +36,11 @@ const reportsClient = axios.create({
 
 const dashboardClient = axios.create({
   baseURL: dashboardBaseURL,
+  timeout: 10000,
+});
+
+const billingClient = axios.create({
+  baseURL: billingBaseURL,
   timeout: 10000,
 });
 
@@ -65,6 +73,14 @@ dashboardClient.interceptors.request.use((config) => {
   return config;
 });
 
+billingClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 profileClient.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -76,11 +92,13 @@ profileClient.interceptors.request.use((config) => {
 export {
   apiClient,
   authClient,
+  billingClient,
   dashboardClient,
   reportsClient,
   profileClient,
   baseURL,
   authBaseURL,
+  billingBaseURL,
   dashboardBaseURL,
   reportsBaseURL,
   profileBaseURL,

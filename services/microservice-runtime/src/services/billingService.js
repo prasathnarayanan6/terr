@@ -25,9 +25,21 @@ export const getBillingSummary = async (apartmentId) => {
       block_id: flat.block_id,
       resident_name: flat.resident_name,
       consumption_litres: consumption,
+      tariff_per_kl: snapshot.billing_cycle.tariff_per_kl,
       projected_amount: Math.round(charge),
     };
   });
+
+  const projectedAmount = perFlat.reduce(
+    (sum, entry) => sum + entry.projected_amount,
+    0
+  );
+  const summary = {
+    total_consumption_litres: totalConsumption,
+    tariff_per_kl: snapshot.billing_cycle.tariff_per_kl,
+    projected_amount: projectedAmount,
+    total_flats: perFlat.length,
+  };
 
   return {
     billing_cycle: snapshot.billing_cycle,
@@ -35,6 +47,8 @@ export const getBillingSummary = async (apartmentId) => {
     tariff_per_kl: snapshot.billing_cycle.tariff_per_kl,
     maintenance_fee: snapshot.billing_cycle.maintenance_fee,
     per_flat: perFlat,
+    summary,
+    per_flat_summary: perFlat,
     finance: snapshot.finance,
   };
 };
