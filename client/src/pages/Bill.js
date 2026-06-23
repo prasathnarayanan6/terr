@@ -10,6 +10,19 @@ const getBillingSummaryTotals = (billing) => billing?.summary || billing || {};
 const getPerFlatSummary = (billing) =>
   billing?.per_flat_summary || billing?.per_flat || [];
 
+const toIsoDate = (date) => date.toISOString().slice(0, 10);
+
+const getCurrentBillingCycleBounds = () => {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+
+  return {
+    period_start: toIsoDate(start),
+    period_end: toIsoDate(end),
+  };
+};
+
 const escapeCsvValue = (value) => {
   const normalized = value ?? "";
   const stringValue = String(normalized);
@@ -24,7 +37,6 @@ function Bill() {
   const [billing, setBilling] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selectedCycle, setSelectedCycle] = useState("current");
   const [selectedBlock, setSelectedBlock] = useState("all");
   const [tariffOverride, setTariffOverride] = useState(() =>
     localStorage.getItem("current_tariff") || ""
@@ -41,15 +53,18 @@ function Bill() {
         setLoading(true);
         setError("");
         const apartmentId = localStorage.getItem("apartment_id");
-        const response = await fetchBillingSummary(apartmentId);
+        const response = await fetchBillingSummary(
+          apartmentId,
+          getCurrentBillingCycleBounds()
+        );
         setBilling(response.data);
-        setSelectedCycle("current");
         setSelectedBlock("all");
       } catch (err) {
         console.error(err);
         setError("Unable to fetch billing summary.");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     load();
   }, []);
@@ -64,53 +79,14 @@ function Bill() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  const formatRange = (start, end) => {
-    const formatter = new Intl.DateTimeFormat("en-IN", {
-      day: "2-digit",
-      month: "short",
-    });
-    return `${formatter.format(start)} - ${formatter.format(end)}`;
-  };
-
-  const cycleOptions = useMemo(() => {
-    const cycle = billing?.billing_cycle;
-    if (!cycle) return [];
-    const currentStart = new Date(cycle.period_start);
-    const currentEnd = new Date(cycle.period_end);
-    const options = [
-      {
-        id: "current",
-        label: `Current Cycle (${formatRange(currentStart, currentEnd)})`,
-      },
-    ];
-    for (let index = 1; index <= 2; index += 1) {
-      const prevStart = new Date(currentStart);
-      prevStart.setMonth(prevStart.getMonth() - index);
-      const prevEnd = new Date(currentEnd);
-      prevEnd.setMonth(prevEnd.getMonth() - index);
-      options.push({
-        id: `previous-${index}`,
-        label: `Previous Cycle ${index} (${formatRange(prevStart, prevEnd)})`,
-      });
-    }
-    return options;
-  }, [billing]);
-
   const blockOptions = useMemo(() => {
     const perFlatSummary = getPerFlatSummary(billing);
     if (!perFlatSummary.length) return [];
     const unique = Array.from(
-      new Set(perFlatSummary.map((entry) => entry.block_id))
+      new Set(perFlatSummary.map((entry) => entry.block_id).filter(Boolean))
     );
     return unique.sort();
   }, [billing]);
-
-  const cycleFactor = useMemo(() => {
-    if (selectedCycle === "current") return 1;
-    if (selectedCycle === "previous-1") return 0.94;
-    if (selectedCycle === "previous-2") return 0.89;
-    return 1;
-  }, [selectedCycle]);
 
   const filteredFlats = useMemo(() => {
     const perFlatSummary = getPerFlatSummary(billing);
@@ -122,41 +98,37 @@ function Bill() {
   const effectiveTariff = useMemo(() => {
     const summary = getBillingSummaryTotals(billing);
     const defaultTariff = summary.tariff_per_kl || 0;
-    if (selectedCycle !== "current") {
-      return defaultTariff;
-    }
     const overrideNumber = Number(tariffOverride);
     const overrideValid = Number.isFinite(overrideNumber) && overrideNumber > 0;
     return overrideValid ? overrideNumber : defaultTariff;
-  }, [billing, tariffOverride, selectedCycle]);
+  }, [billing, tariffOverride]);
 
   const displayFlats = useMemo(() => {
     return filteredFlats.map((entry) => {
-      const adjustedConsumption = Math.round(
-        entry.consumption_litres * cycleFactor
-      );
+      const consumption = Math.round(Number(entry.consumption_litres) || 0);
       return {
         ...entry,
-        consumption_adjusted: adjustedConsumption,
+        consumption_adjusted: consumption,
         projected_amount_adjusted: Math.round(
-          (adjustedConsumption / 1000) * effectiveTariff
+          (consumption / 1000) * effectiveTariff
         ),
       };
     });
-  }, [filteredFlats, effectiveTariff, cycleFactor]);
+  }, [filteredFlats, effectiveTariff]);
 
   const totalConsumptionForCycle = useMemo(() => {
     const summary = getBillingSummaryTotals(billing);
     if (!summary.total_consumption_litres) return 0;
-    return Math.round(summary.total_consumption_litres * cycleFactor);
-  }, [billing, cycleFactor]);
+    return Math.round(Number(summary.total_consumption_litres) || 0);
+  }, [billing]);
 
   const cycleId = billing?.billing_cycle?.period_start || "";
 
   const handleSendFlatBill = async (flatId) => {
     setFlatSendState((prev) => ({ ...prev, [flatId]: "sending" }));
     try {
-      await sendFlatBill(flatId, cycleId);
+      const apartmentId = localStorage.getItem("apartment_id");
+      await sendFlatBill(flatId, cycleId, apartmentId);
       setFlatSendState((prev) => ({ ...prev, [flatId]: "sent" }));
     } catch (err) {
       console.error(`[sendFlatBill] ${flatId}:`, err);
@@ -169,7 +141,9 @@ function Bill() {
     setBulkSending(true);
     setBulkResult(null);
     try {
-      const res = await sendBulkBills(cycleId);
+      const apartmentId = localStorage.getItem("apartment_id");
+      const flatIds = displayFlats.map((entry) => entry.flat_id);
+      const res = await sendBulkBills(cycleId, 5, flatIds, apartmentId);
       setBulkResult({ type: "success", message: res.data.message || "Bulk send started." });
     } catch (err) {
       const msg = err?.response?.data?.message || err.message || "Bulk send failed.";
@@ -183,8 +157,10 @@ function Bill() {
     if (!displayFlats.length) return;
 
     const cycleLabel =
-      cycleOptions.find((option) => option.id === selectedCycle)?.label ||
-      selectedCycle;
+      billing?.billing_cycle?.label ||
+      `${billing?.billing_cycle?.period_start || ""} to ${
+        billing?.billing_cycle?.period_end || ""
+      }`;
 
     const headers = [
       "Billing Cycle",
@@ -216,10 +192,9 @@ function Bill() {
     const downloadUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
     const blockSuffix = selectedBlock === "all" ? "all-blocks" : selectedBlock;
-    const cycleSuffix = selectedCycle.replace(/[^a-z0-9-]/gi, "-").toLowerCase();
 
     link.href = downloadUrl;
-    link.download = `billing-summary-${cycleSuffix}-${blockSuffix}.csv`;
+    link.download = `billing-summary-current-${blockSuffix}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -262,34 +237,18 @@ function Bill() {
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">
                   {billing?.billing_cycle
-                    ? `${billing.billing_cycle.period_start} \u2192 ${billing.billing_cycle.period_end}`
+                    ? `${billing.billing_cycle.period_start} to ${billing.billing_cycle.period_end}`
                     : ""}
                 </p>
               </div>
-              <div className="flex flex-col md:items-end gap-4 text-sm text-gray-600">
-                <div className="w-full md:w-60">
-                  <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
-                    Billing cycle
-                  </label>
-                  <select
-                    value={selectedCycle}
-                    onChange={(event) => setSelectedCycle(event.target.value)}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 px-3 text-sm focus:border-[#00A877] focus:outline-none focus:ring-2 focus:ring-[#8AE5C1]/50"
-                  >
-                    {cycleOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* <div className="flex flex-col md:items-end gap-4 text-sm text-gray-600">
                 <div>
                   Next due date:{" "}
                   <span className="font-medium text-gray-900">
                     {billing?.billing_cycle?.next_due || "-"}
                   </span>
                 </div>
-              </div>
+              </div> */}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
               {summaryCards.map((card) => (
@@ -325,15 +284,15 @@ function Bill() {
                 >
                   Download as CSV
                 </button>
-                <button
+                {/* <button
                   type="button"
                   onClick={handleSendBulkBills}
-                  disabled={loading || !displayFlats.length || bulkSending || selectedCycle !== "current"}
-                  title={selectedCycle !== "current" ? "Bulk send is only available for the current cycle." : "Send bills to all visible flats via email."}
+                  disabled={loading || !displayFlats.length || bulkSending}
+                  title="Send bills to all visible flats via email."
                   className="rounded-lg bg-[#00A877] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#008f64] disabled:cursor-not-allowed disabled:bg-[#9dd8c4]"
                 >
                   {bulkSending ? "Sending..." : "Send bill"}
-                </button>
+                </button> */}
               </div>
             </div>
             {bulkResult && (
@@ -381,7 +340,7 @@ function Bill() {
                     <th className="px-4 py-3">Resident</th>
                     <th className="px-4 py-3 text-right">Consumption (L)</th>
                     <th className="px-4 py-3 text-right">Projected amount</th>
-                    <th className="px-4 py-3 text-center">Action</th>
+                    {/* <th className="px-4 py-3 text-center">Action</th> */}
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
@@ -394,7 +353,7 @@ function Bill() {
                         Loading billing data...
                       </td>
                     </tr>
-                  ) : (
+                  ) : displayFlats.length ? (
                     displayFlats.map((entry) => {
                       const sendStatus = flatSendState[entry.flat_id];
                       return (
@@ -411,7 +370,7 @@ function Bill() {
                           <td className="px-4 py-3 text-right text-gray-900">
                             {formatCurrency(entry.projected_amount_adjusted)}
                           </td>
-                          <td className="px-4 py-3 text-center">
+                          {/* <td className="px-4 py-3 text-center">
                             {sendStatus === "sent" ? (
                               <span className="text-xs font-medium text-emerald-600">Sent</span>
                             ) : sendStatus === "error" ? (
@@ -427,17 +386,26 @@ function Bill() {
                               <button
                                 type="button"
                                 onClick={() => handleSendFlatBill(entry.flat_id)}
-                                disabled={sendStatus === "sending" || selectedCycle !== "current"}
-                                title={selectedCycle !== "current" ? "Mail can only be sent for the current cycle." : `Send bill to ${entry.resident_name}`}
+                                disabled={sendStatus === "sending"}
+                                title={`Send bill to ${entry.resident_name}`}
                                 className="rounded-md border border-[#00A877] px-3 py-1 text-xs font-medium text-[#00A877] transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                               >
                                 {sendStatus === "sending" ? "Sending..." : "Send"}
                               </button>
                             )}
-                          </td>
+                          </td> */}
                         </tr>
                       );
                     })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-6 text-center text-gray-500"
+                      >
+                        No billing data found for the current cycle.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>

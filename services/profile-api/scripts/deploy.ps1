@@ -48,8 +48,8 @@ $parameterOverrides = @(
   'UsersTable="UserCredentials"'
   'FlowTable="flow_data"'
   'ApartmentTable="apartment_data"'
-  'BillingTable="billing_cycles"'
-  'LeaksTable="leak_events"'
+  'BillingTable="tariff_configs"'
+  'LeaksTable="leak_data"'
   ('CustomDomainName="{0}"' -f $customDomainName)
   ('CertificateArn="{0}"' -f $certificateArn)
 )

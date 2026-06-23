@@ -1,14 +1,14 @@
 $ErrorActionPreference = "Stop"
 $env:SAM_CLI_TELEMETRY = "0"
 
-$stackName = "terraclime-reports"
+$stackName = "terraclime-billing-api"
 $region = if ([string]::IsNullOrWhiteSpace($env:AWS_REGION)) { "ap-south-1" } else { $env:AWS_REGION }
-$artifactBucket = if ([string]::IsNullOrWhiteSpace($env:REPORTS_ARTIFACT_BUCKET)) { "terraclime-data-live-artifacts-717279694116-ap-south-1" } else { $env:REPORTS_ARTIFACT_BUCKET }
-$artifactPrefix = if ([string]::IsNullOrWhiteSpace($env:REPORTS_ARTIFACT_PREFIX)) { "terraclime-reports" } else { $env:REPORTS_ARTIFACT_PREFIX }
+$artifactBucket = if ([string]::IsNullOrWhiteSpace($env:BILLING_API_ARTIFACT_BUCKET)) { "terraclime-data-live-artifacts-717279694116-ap-south-1" } else { $env:BILLING_API_ARTIFACT_BUCKET }
+$artifactPrefix = if ([string]::IsNullOrWhiteSpace($env:BILLING_API_ARTIFACT_PREFIX)) { "terraclime-billing-api" } else { $env:BILLING_API_ARTIFACT_PREFIX }
 $packagedTemplate = "packaged.yaml"
 
-$customDomainName = if ([string]::IsNullOrWhiteSpace($env:REPORTS_DOMAIN_NAME)) { "reports.terraclime.com" } else { $env:REPORTS_DOMAIN_NAME }
-$certificateArn = $env:REPORTS_CERTIFICATE_ARN
+$customDomainName = if ([string]::IsNullOrWhiteSpace($env:BILLING_API_DOMAIN_NAME)) { "billing-api.terraclime.com" } else { $env:BILLING_API_DOMAIN_NAME }
+$certificateArn = $env:BILLING_API_CERTIFICATE_ARN
 
 if (-not [string]::IsNullOrWhiteSpace($customDomainName)) {
   if ([string]::IsNullOrWhiteSpace($certificateArn)) {
@@ -34,7 +34,7 @@ if (-not [string]::IsNullOrWhiteSpace($customDomainName)) {
       Select-Object -First 1
 
     if ($null -eq $matchingCertificate) {
-      Write-Error "No issued ACM certificate found for $customDomainName in $region. Set REPORTS_CERTIFICATE_ARN and rerun."
+      Write-Error "No issued ACM certificate found for $customDomainName in $region. Set BILLING_API_CERTIFICATE_ARN and rerun."
     }
 
     $certificateArn = $matchingCertificate.CertificateArn

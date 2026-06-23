@@ -13,11 +13,12 @@ const transporter = nodemailer.createTransport({
   // tls: {
   //   rejectUnauthorized: false,
   // },
-  host: "smtp.zeptomail.in",
-  port: 587,
-  secure: false,
+  host: process.env.SMTP_HOST || "smtp.zeptomail.in",
+  port: Number(process.env.SMTP_PORT || 587),
+  //secure: ["1", "true", "yes", "on"].includes(String(process.env.SMTP_SECURE || "").toLowerCase()),
+  secure: false,  // ZeptoMail recommends STARTTLS on port 587
   auth: {
-    user: "emailapikey",              // ← always this exact string
+    user: "emailapikey",// ← always this exact string
     pass: process.env.ZEPTO_API_KEY || "PHtE6r1fF73simB59xhW5fPuFcWjM4l6r+w1KwhP5dtHDqQGTE1WqNstlzG+qR0tUfFBQPaYwIM5s7yU5umFd2++Mj5NCWqyqK3sx/VYSPOZsbq6x00btVkYfkPZXIfme99p0yzQvNvYNA==",  // ← your Zepto API key
   }
 });
@@ -256,4 +257,53 @@ async function sendBillMail(to, billData) {
   });
 }
 
+// // ─── Test / Manual Run ─────────────────────────────────────────────────────
+
+// const testBillData = {
+//   bill_start_date: "01 Jun 2025",
+//   bill_end_date: "30 Jun 2025",
+//   res_name: "Ravi Kumar",
+//   bill_id: "1042",
+//   issue_date: "01 Jul 2025",
+//   due_date: "10 Jul 2025",
+//   flat_no: "B-204",
+//   inlet_num: 5,
+//   inst_num: 5,
+//   active_num: 5,
+
+//   inlets: {
+//     kitchen: 800,
+//     bath1: 600,
+//     bath2: 500,
+//     bath3: 300,
+//     utility: 200,
+//   },
+
+//   tariff_per_kl: 25,           // ₹25 per KL
+
+//   leakage: {
+//     kitchen: 10,
+//     bath1: 0,
+//     bath2: 5,
+//     bath3: 0,
+//     utility: 0,
+//   },
+//   leakage_penalty_per_l: 0.5,  // ₹0.50 per litre
+
+//   prev_consumed: 2200,
+//   prev_charges: 55,
+
+//   total_amount_due: 60,        // optional override; remove to auto-calc
+
+//   society_legal_name: "Green Valley Residents Association",
+//   app_name: "TerraClime",
+//   society_bank: "HDFC Bank",
+//   society_acc_no: "1234567890",
+//   society_ifsc: "HDFC0001234",
+// };
+
+// // Send the bill email
+// sendBillMail("prasathnarayanan6@gmail.com", testBillData)
+//   .then(info => console.log("✅ Done:", info.messageId))
+//   .catch(err => console.error("❌ Error:", err.message));
 export { transporter, sendMail, sendBillMail, generateBillHTML };

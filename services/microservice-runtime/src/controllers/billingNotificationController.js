@@ -1,7 +1,9 @@
 import {
   getBillingCycle,
+  getCurrentBillingCycle,
   getAllActiveFlats,
   getFlatById,
+  getFlatByEmail,
   getReadingsForFlat,
   getReadingsForCycle,
 } from "../services/dynamo.service.js";
@@ -75,13 +77,23 @@ async function sendWithConcurrency(tasks, concurrency = 5) {
 // ─── POST /api/bills/send-bulk ─────────────────────────────────────────────
 
 /**
- * Body: { cycleId: string, concurrency?: number }
+ * Body: { cycleId: string, apartment_id?: string, concurrency?: number, flatIds?: string[] }
  *
  * Responds immediately with a jobId, then processes in the background.
  * Poll GET /api/bills/status/:jobId for progress.
  */
 export async function sendBulkBills(req, res) {
-  const { cycleId, concurrency = 5 } = req.body;
+  const {
+    cycleId,
+    apartment_id,
+    apartmentId = apartment_id,
+    concurrency = 5,
+    flatIds = [],
+  } = req.body || {};
+  const requestedFlatIds = Array.isArray(flatIds)
+    ? new Set(flatIds.map((flatId) => String(flatId).toLowerCase()))
+    : new Set();
+  const concurrencyLimit = Math.min(Math.max(Number(concurrency) || 5, 1), 10);
 
   if (!cycleId) {
     return res.status(400).json({ success: false, message: "cycleId is required" });
@@ -91,9 +103,12 @@ export async function sendBulkBills(req, res) {
 
   try {
     [cycle, flats] = await Promise.all([
-      getBillingCycle(cycleId),
-      getAllActiveFlats(),
+      getBillingCycle(cycleId, apartmentId),
+      getAllActiveFlats(apartmentId),
     ]);
+    if (requestedFlatIds.size) {
+      flats = flats.filter((flat) => requestedFlatIds.has(String(flat.flatId).toLowerCase()));
+    }
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -118,7 +133,7 @@ export async function sendBulkBills(req, res) {
     try {
       // Batch-fetch all readings
       const flatIds = flats.map(f => f.flatId);
-      const readings = await getReadingsForCycle(cycleId, flatIds);
+      const readings = await getReadingsForCycle(cycleId, flatIds, apartmentId);
 
       const tasks = flats.map((flat, idx) => async () => {
         const flatReadings = readings[flat.flatId];
@@ -138,7 +153,7 @@ export async function sendBulkBills(req, res) {
         }
       });
 
-      await sendWithConcurrency(tasks, concurrency);
+      await sendWithConcurrency(tasks, concurrencyLimit);
       markJobDone(jobId);
     } catch (err) {
       markJobFailed(jobId, err.message);
@@ -149,12 +164,12 @@ export async function sendBulkBills(req, res) {
 // ─── POST /api/bills/send/:flatId ──────────────────────────────────────────
 
 /**
- * Body: { cycleId: string }
+ * Body: { cycleId: string, apartment_id?: string }
  * Sends a bill to a single flat synchronously.
  */
 export async function sendFlatBill(req, res) {
   const { flatId } = req.params;
-  const { cycleId } = req.body;
+  const { cycleId, apartment_id, apartmentId = apartment_id } = req.body || {};
 
   if (!cycleId) {
     return res.status(400).json({ success: false, message: "cycleId is required" });
@@ -162,9 +177,9 @@ export async function sendFlatBill(req, res) {
 
   try {
     const [flat, cycle, readings] = await Promise.all([
-      getFlatById(flatId),
-      getBillingCycle(cycleId),
-      getReadingsForFlat(flatId, cycleId),
+      getFlatById(flatId, apartmentId),
+      getBillingCycle(cycleId, apartmentId),
+      getReadingsForFlat(flatId, cycleId, apartmentId),
     ]);
 
     if (!flat.email) {
@@ -191,6 +206,37 @@ export async function sendFlatBill(req, res) {
 
 // ─── GET /api/bills/status/:jobId ──────────────────────────────────────────
 
+export async function sendBillByEmail(req, res) {
+  const { email, cycleId, apartment_id, apartmentId = apartment_id } = req.body || {};
+
+  if (!email) {
+    return res.status(400).json({ success: false, message: "email is required" });
+  }
+
+  try {
+    const flat = await getFlatByEmail(email, apartmentId);
+    const cycle = cycleId
+      ? await getBillingCycle(cycleId, apartmentId)
+      : await getCurrentBillingCycle(apartmentId);
+    const readings = await getReadingsForFlat(flat.flatId, cycle.cycleId, apartmentId);
+    const billId = `${cycle.cycleId}-${flat.flatId}`;
+    const billData = buildBillData({ flat, readings, cycle, billId });
+    const info = await sendBillMail(flat.email, billData);
+
+    return res.json({
+      success: true,
+      flatId: flat.flatId,
+      email: flat.email,
+      cycleId: cycle.cycleId,
+      messageId: info.messageId,
+      message: `Bill sent to ${flat.email}`,
+    });
+  } catch (err) {
+    console.error(`[sendBillByEmail] ${email}:`, err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
 export function getBillStatus(req, res) {
   const job = getJob(req.params.jobId);
   if (!job) {
@@ -212,7 +258,7 @@ export function getBillStatus(req, res) {
  */
 export async function previewBill(req, res) {
   const { flatId } = req.params;
-  const { cycleId } = req.query;
+  const { cycleId, apartment_id, apartmentId = apartment_id } = req.query;
 
   if (!cycleId) {
     return res.status(400).send("cycleId query param is required");
@@ -220,9 +266,9 @@ export async function previewBill(req, res) {
 
   try {
     const [flat, cycle, readings] = await Promise.all([
-      getFlatById(flatId),
-      getBillingCycle(cycleId),
-      getReadingsForFlat(flatId, cycleId),
+      getFlatById(flatId, apartmentId),
+      getBillingCycle(cycleId, apartmentId),
+      getReadingsForFlat(flatId, cycleId, apartmentId),
     ]);
 
     const billId = `${cycleId}-${flatId}`;

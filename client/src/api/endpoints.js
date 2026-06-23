@@ -2,6 +2,7 @@ import {
   apiClient,
   authClient,
   billingClient,
+  billsClient,
   dashboardClient,
   profileClient,
   reportsClient,
@@ -38,9 +39,13 @@ export const fetchLeakSummary = (apartmentId) =>
     params: { apartment_id: apartmentId },
   });
 
-export const fetchBillingSummary = (apartmentId) =>
+export const fetchBillingSummary = (apartmentId, cycle = {}) =>
   billingClient.get("/billing/summary", {
-    params: { apartment_id: apartmentId },
+    params: {
+      apartment_id: apartmentId,
+      period_start: cycle.period_start,
+      period_end: cycle.period_end,
+    },
   });
 
 export const fetchProfile = (userMail) =>
@@ -48,14 +53,29 @@ export const fetchProfile = (userMail) =>
     params: { user_mail: userMail },
   });
 
-export const sendFlatBill = (flatId, cycleId) =>
-  apiClient.post(`/bills/send/${flatId}`, { cycleId });
+export const sendFlatBill = (flatId, cycleId, apartmentId) =>
+  billsClient.post(`/bills/send/${flatId}`, {
+    cycleId,
+    apartment_id: apartmentId,
+  });
 
-export const sendBulkBills = (cycleId, concurrency = 5) =>
-  apiClient.post("/bills/send-bulk", { cycleId, concurrency });
+export const sendBillByEmail = (email, apartmentId, cycleId) =>
+  billsClient.post("/bills/send-email", {
+    email,
+    apartment_id: apartmentId,
+    cycleId,
+  });
+
+export const sendBulkBills = (cycleId, concurrency = 5, flatIds = [], apartmentId) =>
+  billsClient.post("/bills/send-bulk", {
+    cycleId,
+    concurrency,
+    flatIds,
+    apartment_id: apartmentId,
+  });
 
 export const getBillJobStatus = (jobId) =>
-  apiClient.get(`/bills/status/${jobId}`);
+  billsClient.get(`/bills/status/${jobId}`);
 
 export const fetchPrepaidOverview = (zoneId) =>
   apiClient.get("/prepaid/overview", { params: { zone_id: zoneId } });

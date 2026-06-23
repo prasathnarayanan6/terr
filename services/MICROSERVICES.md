@@ -45,6 +45,60 @@ npm start
 inside `services/billing-api` only when you intentionally want the offline
 sample dataset.
 
+`bills-api` is the SMTP/bill-delivery microservice. For a safe local smoke test
+against demo residents:
+
+```powershell
+cd services/bills-api
+npm run start:dry
+```
+
+For a dry-run against real DynamoDB records without sending email:
+
+```powershell
+cd services/bills-api
+npm run start:live-dry
+```
+
+Live bill delivery expects these DynamoDB table defaults:
+
+- `APARTMENT_TABLE=apartment_data`
+- `USERS_TABLE=UserCredentials`
+- `FLOW_TABLE=flow_data`
+- `LEAKS_TABLE=leak_data`
+- `TARIFF_TABLE=tariff_configs`
+
+The old `billing_cycles` table is treated as a legacy optional source only when
+`BILLING_TABLE` is explicitly set. Current tariffs are read from
+`tariff_configs`, including `blended_rate`.
+
+For real mail delivery, copy `services/bills-api/.env.example` to `.env` and set
+`ZEPTO_API_KEY` for ZeptoMail, or set `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
+`SMTP_USER`, and `SMTP_PASS` for a generic SMTP provider such as Zoho Mail. Set
+`BILL_TEST_RECIPIENT` while testing if every generated bill should go to one
+inbox instead of resident emails.
+
+The React app uses `REACT_APP_BILLS_API_BASE_URL` for deployed bill delivery.
+In development it defaults to `http://localhost:8091/api`.
+
+Bill delivery accepts `apartment_id` on individual and bulk send requests. The
+service uses it to find flats inside that apartment, then sends to
+`resident_email` from apartment flat metadata or `user_mail` from
+`UserCredentials` when the flat metadata has no email.
+
+To send directly by email for the current billing cycle:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8091/api/bills/send-email" `
+  -ContentType "application/json" `
+  -Body '{"email":"resident1@example.com","apartment_id":"SOBHA-TWR-1"}'
+```
+
+`cycleId` is optional for this endpoint. When omitted, the service uses the
+apartment's configured current billing cycle.
+
 ## Build and deploy
 
 Each service folder includes its own SAM template:

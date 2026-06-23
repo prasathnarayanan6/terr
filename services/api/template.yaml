@@ -33,10 +33,10 @@ Parameters:
     Default: apartment_data
   BillingTable:
     Type: String
-    Default: billing_cycles
+    Default: tariff_configs
   LeaksTable:
     Type: String
-    Default: leak_events
+    Default: leak_data
   PrepaidTable:
     Type: String
     Default: prepaid_zones

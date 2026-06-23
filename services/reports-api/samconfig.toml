@@ -8,7 +8,7 @@ s3_prefix = "terraclime-reports"
 region = "ap-south-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "StageName=\"prod\" UseDemoData=\"false\" AwsRegion=\"ap-south-1\" UsersTable=\"UserCredentials\" FlowTable=\"flow_data\" DeviceTable=\"device_data\" ApartmentTable=\"apartment_data\" BillingTable=\"billing_cycles\" LeaksTable=\"leak_events\" CustomDomainName=\"reports.terraclime.com\" CertificateArn=\"\""
+parameter_overrides = "StageName=\"prod\" UseDemoData=\"false\" AwsRegion=\"ap-south-1\" UsersTable=\"UserCredentials\" FlowTable=\"flow_data\" DeviceTable=\"device_data\" ApartmentTable=\"apartment_data\" BillingTable=\"tariff_configs\" LeaksTable=\"leak_data\" CustomDomainName=\"reports.terraclime.com\" CertificateArn=\"\""
 image_repositories = []
 
 [default.global.parameters]

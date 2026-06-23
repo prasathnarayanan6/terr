@@ -19,6 +19,95 @@ const DEFAULT_SOCIETY_INFO = {
   ifsc: "",
 };
 
+const normalizeKey = (value) => String(value ?? "").trim().toLowerCase();
+
+const getFirstValue = (source = {}, fields = []) => {
+  for (const field of fields) {
+    const value = source[field];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+
+  return "";
+};
+
+const getApartmentId = (source = {}) =>
+  getFirstValue(source, [
+    "apartment_id",
+    "apartmentId",
+    "apartmentID",
+    "apartment",
+    "society_id",
+    "societyId",
+    "id",
+  ]);
+
+const getFlatId = (source = {}) =>
+  getFirstValue(source, [
+    "flat_id",
+    "flatId",
+    "flat_number",
+    "flatNumber",
+    "flat_no",
+    "flatNo",
+    "unit_id",
+    "unitId",
+    "house_id",
+    "houseId",
+  ]);
+
+const getEmail = (source = {}) =>
+  getFirstValue(source, [
+    "resident_email",
+    "residentEmail",
+    "res_email",
+    "resEmail",
+    "user_mail",
+    "userMail",
+    "mail",
+    "email",
+  ]);
+
+const getResidentName = (source = {}) =>
+  getFirstValue(source, [
+    "resident_name",
+    "residentName",
+    "res_name",
+    "resName",
+    "owner_name",
+    "ownerName",
+    "name",
+  ]);
+
+const apartmentMatches = (source, apartmentId) =>
+  !apartmentId || normalizeKey(getApartmentId(source)) === normalizeKey(apartmentId);
+
+const recordBelongsToApartment = (record, apartmentId) => {
+  if (!apartmentId) return true;
+  const recordApartmentId = getApartmentId(record);
+  return !recordApartmentId || normalizeKey(recordApartmentId) === normalizeKey(apartmentId);
+};
+
+const isMissingDynamoTable = (error) =>
+  error?.name === "ResourceNotFoundException" ||
+  error?.__type === "com.amazonaws.dynamodb.v20120810#ResourceNotFoundException";
+
+const scanAllOptional = async (tableName, label) => {
+  try {
+    return await scanAllItems(tableName);
+  } catch (error) {
+    if (isMissingDynamoTable(error)) {
+      console.warn(
+        `[billsService] Optional DynamoDB table "${tableName}" for ${label} was not found; continuing without it.`
+      );
+      return [];
+    }
+
+    throw error;
+  }
+};
+
 const mapLeakBucket = (source) => {
   const normalized = String(source || "").trim().toLowerCase();
 
@@ -56,14 +145,32 @@ const normalizeBillingCycle = (primarySource = {}, fallbackSource = {}) => {
     source.period_start ||
     source.startDate ||
     source.start_date;
+  const startDate = normalizeIsoDate(source.period_start || source.startDate || source.start_date || cycleId);
+  const explicitEndDate = normalizeIsoDate(source.period_end || source.endDate || source.end_date);
+  const endDate =
+    explicitEndDate ||
+    (startDate
+      ? new Date(Date.UTC(
+          new Date(`${startDate}T00:00:00Z`).getUTCFullYear(),
+          new Date(`${startDate}T00:00:00Z`).getUTCMonth() + 1,
+          0
+        ))
+          .toISOString()
+          .slice(0, 10)
+      : null);
 
   return {
     cycleId: String(cycleId || ""),
-    startDate: normalizeIsoDate(source.period_start || source.startDate || source.start_date),
-    endDate: normalizeIsoDate(source.period_end || source.endDate || source.end_date),
+    startDate,
+    endDate,
     dueDate: normalizeIsoDate(source.next_due || source.dueDate || source.due_date),
     tariffPerKL: toFiniteNumber(
-      source.tariff_per_kl || source.tariffPerKL || source.tariff || source.rate_per_kl,
+      source.tariff_per_kl ||
+        source.tariffPerKL ||
+        source.blended_rate ||
+        source.blendedRate ||
+        source.tariff ||
+        source.rate_per_kl,
       0
     ),
     leakagePenaltyPerL: toFiniteNumber(
@@ -113,6 +220,38 @@ const matchCycleRecord = (record, cycleId) => {
     .filter(Boolean);
 
   return candidates.includes(String(cycleId));
+};
+
+const mergeCycleWithTariff = (cycle, tariffRecord) => {
+  if (!tariffRecord) {
+    return cycle;
+  }
+
+  return normalizeBillingCycle(
+    {
+      ...cycle,
+      ...tariffRecord,
+      period_start: cycle?.startDate || tariffRecord.period_start || tariffRecord.cycle_id,
+      period_end: cycle?.endDate || tariffRecord.period_end,
+      next_due: cycle?.dueDate || tariffRecord.next_due,
+      tariff_per_kl:
+        tariffRecord.tariff_per_kl ||
+        tariffRecord.tariffPerKL ||
+        tariffRecord.blended_rate ||
+        tariffRecord.blendedRate ||
+        cycle?.tariffPerKL,
+      leakage_penalty_per_l:
+        tariffRecord.leakage_penalty_per_l ||
+        tariffRecord.leakagePenaltyPerL ||
+        cycle?.leakagePenaltyPerL,
+    },
+    {}
+  );
+};
+
+const findApartmentById = async (apartmentId) => {
+  const apartments = await resolveApartmentItems();
+  return apartments.find((apartment) => apartmentMatches(apartment, apartmentId)) || null;
 };
 
 const buildObservedDevices = (metadataDevices = [], flowRecords = [], leakEvents = []) => {
@@ -252,15 +391,54 @@ const buildCycleBounds = (cycle) => {
 
 const resolveApartmentItems = async () => scanAllItems(appConfig.tables.apartments);
 
-const resolveUsers = async () => scanAllItems(appConfig.tables.users);
+const resolveUsers = async () => scanAllOptional(appConfig.tables.users, "resident users");
 
-const getBillingRecords = async () => scanAllItems(appConfig.tables.billing);
+const getBillingRecords = async () =>
+  process.env.BILLING_TABLE
+    ? scanAllOptional(appConfig.tables.billing, "legacy billing cycles")
+    : [];
+
+const getTariffRecords = async () => scanAllOptional(appConfig.tables.tariffs, "tariff configs");
+
+const getTariffRecord = async (apartmentId, cycleId) => {
+  const tariffs = await getTariffRecords();
+  return (
+    tariffs.find(
+      (record) =>
+        apartmentMatches(record, apartmentId) &&
+        (!cycleId || matchCycleRecord(record, cycleId))
+    ) || null
+  );
+};
 
 const getFlowRecords = async () => scanAllItems(appConfig.tables.flow);
 
-const getLeakRecords = async () => scanAllItems(appConfig.tables.leaks);
+const getLeakRecords = async () => scanAllOptional(appConfig.tables.leaks, "leak events");
 
-const findFlatAcrossApartments = async (flatId) => {
+const getApartmentFlatRows = (apartmentItems = [], apartmentId) =>
+  apartmentItems
+    .filter((item) => apartmentMatches(item, apartmentId))
+    .flatMap((item) => {
+      if (Array.isArray(item?.flats)) {
+        return item.flats.map((flat) => ({
+          apartment: item,
+          flat,
+        }));
+      }
+
+      if (getFlatId(item)) {
+        return [
+          {
+            apartment: item,
+            flat: item,
+          },
+        ];
+      }
+
+      return [];
+    });
+
+const findFlatAcrossApartments = async (flatId, apartmentId) => {
   const [apartments, users, flowRecords, leakRecords] = await Promise.all([
     resolveApartmentItems(),
     resolveUsers(),
@@ -268,32 +446,37 @@ const findFlatAcrossApartments = async (flatId) => {
     getLeakRecords(),
   ]);
 
-  const normalizedFlatId = String(flatId).toLowerCase();
-  const apartment = apartments.find((item) =>
-    (item?.flats || []).some(
-      (flat) => String(flat?.flat_id || flat?.flatId || "").toLowerCase() === normalizedFlatId
-    )
+  const normalizedFlatId = normalizeKey(flatId);
+  const matched = getApartmentFlatRows(apartments, apartmentId).find(
+    ({ flat }) => normalizeKey(getFlatId(flat)) === normalizedFlatId
   );
-
-  const flat =
-    apartment?.flats?.find(
-      (item) => String(item?.flat_id || item?.flatId || "").toLowerCase() === normalizedFlatId
-    ) || null;
+  const apartment = matched?.apartment || null;
+  const flat = matched?.flat || null;
 
   if (!flat) {
-    throw new Error(`Flat ${flatId} not found`);
+    throw new Error(
+      apartmentId
+        ? `Flat ${flatId} not found for apartment ${apartmentId}`
+        : `Flat ${flatId} not found`
+    );
   }
 
   const flatUsers = users.filter(
-    (userRecord) => String(userRecord?.flat_id || userRecord?.flatId || "").toLowerCase() === normalizedFlatId
+    (userRecord) =>
+      normalizeKey(getFlatId(userRecord)) === normalizedFlatId &&
+      recordBelongsToApartment(userRecord, apartmentId)
   );
   const primaryUser = flatUsers[0] || null;
 
   const matchingFlowRecords = flowRecords.filter(
-    (record) => String(record?.flat_id || record?.flatId || "").toLowerCase() === normalizedFlatId
+    (record) =>
+      normalizeKey(getFlatId(record)) === normalizedFlatId &&
+      recordBelongsToApartment(record, apartmentId)
   );
   const matchingLeaks = leakRecords.filter(
-    (record) => String(record?.flat_id || record?.flatId || "").toLowerCase() === normalizedFlatId
+    (record) =>
+      normalizeKey(getFlatId(record)) === normalizedFlatId &&
+      recordBelongsToApartment(record, apartmentId)
   );
   const devices = buildObservedDevices(flat?.devices, matchingFlowRecords, matchingLeaks);
 
@@ -308,20 +491,15 @@ const findFlatAcrossApartments = async (flatId) => {
 };
 
 const buildFlatInfo = ({ flat, primaryUser, devices }) => ({
-  flatId: flat.flat_id || flat.flatId,
+  flatId: getFlatId(flat),
   residentName:
-    flat.resident_name ||
-    flat.residentName ||
+    getResidentName(flat) ||
+    getResidentName(primaryUser) ||
     [primaryUser?.first_name, primaryUser?.last_name].filter(Boolean).join(" ") ||
-    String(flat.flat_id || flat.flatId),
-  email:
-    flat.resident_email ||
-    flat.email ||
-    primaryUser?.resident_email ||
-    primaryUser?.user_mail ||
-    "",
+    String(getFlatId(flat)),
+  email: getEmail(flat) || getEmail(primaryUser) || "",
   block: flat.block_id || flat.blockId || "",
-  flatNo: flat.flat_no || flat.flatNo || flat.flat_id || flat.flatId,
+  flatNo: flat.flat_no || flat.flatNo || getFlatId(flat),
   inletCount: devices.length || toFiniteNumber(flat.inlet_count || flat.inletCount, 0),
   installedMeters: devices.length || toFiniteNumber(flat.installed_meters || flat.installedMeters, 0),
   activeMeters: devices.filter((device) => device.status === "active").length,
@@ -392,31 +570,86 @@ function demoReadingsForFlat(flat) {
   };
 }
 
-export async function getBillingCycle(cycleId) {
+export async function getBillingCycle(cycleId, apartmentId) {
   if (appConfig.demoMode) {
     return demoCycle();
   }
 
+  const tariffRecord = await getTariffRecord(apartmentId, cycleId);
+  const apartments = await resolveApartmentItems();
+  const apartmentMatch = apartments.find(
+    (record) =>
+      apartmentMatches(record, apartmentId) &&
+      matchCycleRecord(record?.billing_cycle || record, cycleId)
+  );
+
+  if (apartmentMatch) {
+    const cycle = normalizeBillingCycle(apartmentMatch?.billing_cycle || apartmentMatch, {});
+    return mergeCycleWithTariff(cycle, tariffRecord);
+  }
+
+  if (tariffRecord) {
+    return normalizeBillingCycle(tariffRecord, {});
+  }
+
   const billingRecords = await getBillingRecords();
-  const matchingRecord = billingRecords.find((record) => matchCycleRecord(record, cycleId));
+  const matchingRecord = billingRecords.find(
+    (record) => matchCycleRecord(record, cycleId) && recordBelongsToApartment(record, apartmentId)
+  );
 
   if (matchingRecord) {
     return normalizeBillingCycle(matchingRecord, {});
   }
 
-  const apartments = await resolveApartmentItems();
-  const apartmentMatch = apartments.find((record) =>
-    matchCycleRecord(record?.billing_cycle || record, cycleId)
-  );
-
-  if (!apartmentMatch) {
-    throw new Error(`Billing cycle ${cycleId} not found`);
-  }
-
-  return normalizeBillingCycle(apartmentMatch?.billing_cycle || apartmentMatch, {});
+  throw new Error(`Billing cycle ${cycleId} not found`);
 }
 
-export async function getAllActiveFlats() {
+export async function getCurrentBillingCycle(apartmentId) {
+  if (appConfig.demoMode) {
+    return demoCycle();
+  }
+
+  const apartment = await findApartmentById(apartmentId);
+  if (apartment?.billing_cycle) {
+    const cycle = normalizeBillingCycle(apartment.billing_cycle, apartment);
+    const tariffRecord = await getTariffRecord(apartmentId, cycle.cycleId);
+    return mergeCycleWithTariff(cycle, tariffRecord);
+  }
+
+  const tariffCycles = (await getTariffRecords())
+    .filter((record) => apartmentMatches(record, apartmentId))
+    .map((record) => normalizeBillingCycle(record, {}))
+    .filter((cycle) => cycle.startDate);
+
+  const latestTariffCycle = tariffCycles.sort((left, right) =>
+    sortByIsoDate(left.startDate, right.startDate)
+  ).at(-1);
+
+  if (latestTariffCycle) {
+    return latestTariffCycle;
+  }
+
+  const billingRecords = (await getBillingRecords())
+    .filter((record) => recordBelongsToApartment(record, apartmentId))
+    .map((record) => normalizeBillingCycle(record, {}))
+    .filter((cycle) => cycle.startDate);
+
+  const latestCycle = billingRecords.sort((left, right) =>
+    sortByIsoDate(left.startDate, right.startDate)
+  ).at(-1);
+
+  if (!latestCycle) {
+    throw new Error(
+      apartmentId
+        ? `Current billing cycle not found for apartment ${apartmentId}`
+        : "Current billing cycle not found"
+    );
+  }
+
+  return latestCycle;
+}
+
+export async function getAllActiveFlats(apartmentId) {
   if (appConfig.demoMode) {
     return demoFlats().filter((flat) => flat.email);
   }
@@ -430,37 +663,44 @@ export async function getAllActiveFlats() {
 
   const userByFlat = new Map(
     users
-      .filter((userRecord) => userRecord?.flat_id || userRecord?.flatId)
+      .filter(
+        (userRecord) =>
+          getFlatId(userRecord) &&
+          recordBelongsToApartment(userRecord, apartmentId)
+      )
       .map((userRecord) => [
-        String(userRecord.flat_id || userRecord.flatId).toLowerCase(),
+        normalizeKey(getFlatId(userRecord)),
         userRecord,
       ])
   );
 
-  return apartments
-    .flatMap((apartment) => apartment?.flats || [])
-    .map((flat) => {
-      const flatId = String(flat.flat_id || flat.flatId);
+  return getApartmentFlatRows(apartments, apartmentId)
+    .map(({ flat }) => {
+      const flatId = String(getFlatId(flat));
       const devices = buildObservedDevices(
         flat.devices,
         flowRecords.filter(
-          (record) => String(record?.flat_id || record?.flatId || "").toLowerCase() === flatId.toLowerCase()
+          (record) =>
+            normalizeKey(getFlatId(record)) === normalizeKey(flatId) &&
+            recordBelongsToApartment(record, apartmentId)
         ),
         leakRecords.filter(
-          (record) => String(record?.flat_id || record?.flatId || "").toLowerCase() === flatId.toLowerCase()
+          (record) =>
+            normalizeKey(getFlatId(record)) === normalizeKey(flatId) &&
+            recordBelongsToApartment(record, apartmentId)
         )
       );
 
       return buildFlatInfo({
         flat,
-        primaryUser: userByFlat.get(flatId.toLowerCase()) || null,
+        primaryUser: userByFlat.get(normalizeKey(flatId)) || null,
         devices,
       });
     })
     .filter((flat) => flat.email);
 }
 
-export async function getFlatById(flatId) {
+export async function getFlatById(flatId, apartmentId) {
   if (appConfig.demoMode) {
     const rawFlat = demoApartment.flats.find((flat) => flat.flat_id === flatId);
     if (!rawFlat) throw new Error(`Flat ${flatId} not found`);
@@ -477,11 +717,66 @@ export async function getFlatById(flatId) {
     };
   }
 
-  const result = await findFlatAcrossApartments(flatId);
+  const result = await findFlatAcrossApartments(flatId, apartmentId);
   return buildFlatInfo(result);
 }
 
-export async function getReadingsForFlat(flatId, cycleId) {
+export async function getFlatByEmail(email, apartmentId) {
+  const normalizedEmail = normalizeKey(email);
+  if (!normalizedEmail) {
+    throw new Error("email is required");
+  }
+
+  if (appConfig.demoMode) {
+    const flat = demoFlats().find((item) => normalizeKey(item.email) === normalizedEmail);
+    if (flat) return flat;
+  }
+
+  const apartments = await resolveApartmentItems();
+  const matched = getApartmentFlatRows(apartments, apartmentId).find(
+    ({ flat }) => normalizeKey(getEmail(flat)) === normalizedEmail
+  );
+
+  if (matched) {
+    return getFlatById(
+      getFlatId(matched.flat),
+      apartmentId || getApartmentId(matched.apartment)
+    );
+  }
+
+  const flats = await getAllActiveFlats(apartmentId);
+  const flat = flats.find((item) => normalizeKey(item.email) === normalizedEmail);
+
+  if (flat) {
+    return flat;
+  }
+
+  const users = await resolveUsers();
+  const matchingUser = users.find(
+    (userRecord) =>
+      normalizeKey(getEmail(userRecord)) === normalizedEmail &&
+      recordBelongsToApartment(userRecord, apartmentId)
+  );
+
+  if (matchingUser) {
+    const flatId = getFlatId(matchingUser);
+    if (!flatId) {
+      throw new Error(
+        `Email ${email} was found in UserCredentials, but that user has no flat_id/flat_number.`
+      );
+    }
+
+    return getFlatById(flatId, apartmentId);
+  }
+
+  throw new Error(
+    apartmentId
+      ? `Email ${email} not found for apartment ${apartmentId}`
+      : `Email ${email} not found`
+  );
+}
+
+export async function getReadingsForFlat(flatId, cycleId, apartmentId) {
   if (appConfig.demoMode) {
     const rawFlat = demoApartment.flats.find((flat) => flat.flat_id === flatId);
     if (!rawFlat) throw new Error(`Flat ${flatId} not found`);
@@ -489,8 +784,8 @@ export async function getReadingsForFlat(flatId, cycleId) {
   }
 
   const [cycle, flatResult] = await Promise.all([
-    getBillingCycle(cycleId),
-    findFlatAcrossApartments(flatId),
+    getBillingCycle(cycleId, apartmentId),
+    findFlatAcrossApartments(flatId, apartmentId),
   ]);
 
   const bounds = buildCycleBounds(cycle);
@@ -528,7 +823,7 @@ export async function getReadingsForFlat(flatId, cycleId) {
   };
 }
 
-export async function getReadingsForCycle(cycleId, flatIds) {
+export async function getReadingsForCycle(cycleId, flatIds, apartmentId) {
   if (appConfig.demoMode) {
     const map = {};
     for (const id of flatIds) {
@@ -540,9 +835,12 @@ export async function getReadingsForCycle(cycleId, flatIds) {
     return map;
   }
 
-  const cycle = await getBillingCycle(cycleId);
+  const cycle = await getBillingCycle(cycleId, apartmentId);
   const results = await Promise.all(
-    flatIds.map(async (flatId) => [flatId, await getReadingsForFlat(flatId, cycle.cycleId)])
+    flatIds.map(async (flatId) => [
+      flatId,
+      await getReadingsForFlat(flatId, cycle.cycleId, apartmentId),
+    ])
   );
 
   return Object.fromEntries(results);

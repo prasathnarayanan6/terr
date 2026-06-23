@@ -13,7 +13,10 @@ const dashboardBaseURL =
   process.env.REACT_APP_DASHBOARD_API_BASE_URL || "https://overview.terraclime.com/api";
 const billingBaseURL =
   process.env.REACT_APP_BILLING_API_BASE_URL ||
-  (process.env.NODE_ENV === "development" ? "http://localhost:8090/api" : baseURL);
+  "https://billing-api.terraclime.com/api";
+const billsBaseURL =
+  process.env.REACT_APP_BILLS_API_BASE_URL ||
+  (process.env.NODE_ENV === "development" ? "http://localhost:8091/api" : baseURL);
 const authBaseURL =
   process.env.REACT_APP_AUTH_API_BASE_URL || "https://auth.terraclime.com/api";
 const profileBaseURL =
@@ -41,6 +44,11 @@ const dashboardClient = axios.create({
 
 const billingClient = axios.create({
   baseURL: billingBaseURL,
+  timeout: 10000,
+});
+
+const billsClient = axios.create({
+  baseURL: billsBaseURL,
   timeout: 10000,
 });
 
@@ -81,6 +89,14 @@ billingClient.interceptors.request.use((config) => {
   return config;
 });
 
+billsClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 profileClient.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -93,12 +109,14 @@ export {
   apiClient,
   authClient,
   billingClient,
+  billsClient,
   dashboardClient,
   reportsClient,
   profileClient,
   baseURL,
   authBaseURL,
   billingBaseURL,
+  billsBaseURL,
   dashboardBaseURL,
   reportsBaseURL,
   profileBaseURL,

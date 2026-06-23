@@ -29,10 +29,10 @@ Parameters:
     Default: apartment_data
   BillingTable:
     Type: String
-    Default: billing_cycles
+    Default: tariff_configs
   LeaksTable:
     Type: String
-    Default: leak_events
+    Default: leak_data
   CustomDomainName:
     Type: String
     Default: reports.terraclime.com
