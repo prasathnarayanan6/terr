@@ -4,12 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1",
+    "deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1",
     "start": "node ../microservice-runtime/bills-api/src/index.js",
     "start:demo": "node -e \"process.env.USE_DEMO_DATA='true'; import('../microservice-runtime/bills-api/src/index.js')\"",
     "start:dry": "node -e \"process.env.USE_DEMO_DATA='true'; process.env.MAIL_DRY_RUN='true'; import('../microservice-runtime/bills-api/src/index.js')\"",
     "start:live-dry": "node -e \"process.env.USE_DEMO_DATA='false'; process.env.MAIL_DRY_RUN='true'; import('../microservice-runtime/bills-api/src/index.js')\"",
     "start:live": "node -e \"process.env.USE_DEMO_DATA='false'; import('../microservice-runtime/bills-api/src/index.js')\"",
-    "sam:build": "sam build --template-file template.yaml",
-    "sam:deploy": "sam deploy --guided --template-file template.yaml"
+    "start:sam": "powershell -ExecutionPolicy Bypass -File scripts/start-sam.ps1",
+    "sam:build": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1",
+    "sam:deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy-guided.ps1"
   }
 }

@@ -16,7 +16,7 @@ const billingBaseURL =
   "https://billing-api.terraclime.com/api";
 const billsBaseURL =
   process.env.REACT_APP_BILLS_API_BASE_URL ||
-  (process.env.NODE_ENV === "development" ? "http://localhost:8091/api" : baseURL);
+  "https://bills-api.terraclime.com/api";
 const authBaseURL =
   process.env.REACT_APP_AUTH_API_BASE_URL || "https://auth.terraclime.com/api";
 const profileBaseURL =

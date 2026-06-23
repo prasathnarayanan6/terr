@@ -65,6 +65,14 @@ Parameters:
   LeaksTable:
     Type: String
     Default: leak_data
+  CustomDomainName:
+    Type: String
+    Default: bills-api.terraclime.com
+    Description: Custom domain name for the bill-delivery API.
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate ARN for CustomDomainName.
 
 Globals:
   Function:
@@ -86,7 +94,6 @@ Globals:
         SMTP_FROM: !Ref SmtpFrom
         BILL_TEST_RECIPIENT: !Ref BillTestRecipient
         MAIL_DRY_RUN: !Ref MailDryRun
-        AWS_REGION: !Ref AwsRegion
         USERS_TABLE: !Ref UsersTable
         FLOW_TABLE: !Ref FlowTable
         APARTMENT_TABLE: !Ref ApartmentTable
@@ -98,6 +105,11 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref StageName
+      Domain:
+        DomainName: !Ref CustomDomainName
+        CertificateArn: !Ref CertificateArn
+        EndpointConfiguration: REGIONAL
+        SecurityPolicy: TLS_1_2
 
   BillsFunction:
     Type: AWS::Serverless::Function
@@ -145,5 +157,11 @@ Outputs:
   BillsSendBulkEndpoint:
     Description: POST endpoint for bulk bill delivery.
     Value: !Sub https://${BillsApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/api/bills/send-bulk
+  BillsCustomBaseUrl:
+    Description: Custom HTTPS base URL for the deployed bill-delivery API.
+    Value: !Sub https://${CustomDomainName}
+  BillsCustomSendBulkEndpoint:
+    Description: Custom HTTPS POST endpoint for bulk bill delivery.
+    Value: !Sub https://${CustomDomainName}/api/bills/send-bulk
 
 
