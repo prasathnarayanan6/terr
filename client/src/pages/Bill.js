@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import SideBar from "../components/SideBar";
 import NavBar from "../components/NavBar";
-import { fetchBillingSummary, sendFlatBill, sendBulkBills } from "../api/endpoints";
+import { fetchBillingSummary, sendBillByEmail, sendBulkBills } from "../api/endpoints";
 
 const formatCurrency = (value) => `\u20B9${value.toLocaleString("en-IN")}`;
 
@@ -11,6 +11,20 @@ const getPerFlatSummary = (billing) =>
   billing?.per_flat_summary || billing?.per_flat || [];
 
 const toIsoDate = (date) => date.toISOString().slice(0, 10);
+
+const getBillingCycleId = (billingCycle) => {
+  const explicitCycleId = billingCycle?.cycle_id || billingCycle?.cycleId;
+  if (explicitCycleId) return explicitCycleId;
+
+  const periodStart = billingCycle?.period_start || "";
+  return periodStart.length >= 7 ? periodStart.slice(0, 7) : periodStart;
+};
+
+const getBillFlatId = (entry) =>
+  entry?.flat_id || entry?.flatId || entry?.bill_flat_id || entry?.billFlatId;
+
+const getDisplayFlatNumber = (entry) =>
+  entry?.flat_number || entry?.flatNumber || entry?.flat_no || entry?.flatNo || entry?.flat_id;
 
 const getCurrentBillingCycleBounds = () => {
   const now = new Date();
@@ -122,16 +136,24 @@ function Bill() {
     return Math.round(Number(summary.total_consumption_litres) || 0);
   }, [billing]);
 
-  const cycleId = billing?.billing_cycle?.period_start || "";
+  const cycleId = getBillingCycleId(billing?.billing_cycle);
 
-  const handleSendFlatBill = async (flatId) => {
+  const handleSendFlatBill = async (entry) => {
+    const flatId = getBillFlatId(entry);
+    const email = entry.resident_email;
+
+    if (!email) {
+      setFlatSendState((prev) => ({ ...prev, [flatId]: "missing-email" }));
+      return;
+    }
+
     setFlatSendState((prev) => ({ ...prev, [flatId]: "sending" }));
     try {
       const apartmentId = localStorage.getItem("apartment_id");
-      await sendFlatBill(flatId, cycleId, apartmentId);
+      await sendBillByEmail(email, apartmentId, cycleId || undefined);
       setFlatSendState((prev) => ({ ...prev, [flatId]: "sent" }));
     } catch (err) {
-      console.error(`[sendFlatBill] ${flatId}:`, err);
+      console.error(`[sendBillByEmail] ${flatId}:`, err);
       setFlatSendState((prev) => ({ ...prev, [flatId]: "error" }));
     }
   };
@@ -142,7 +164,7 @@ function Bill() {
     setBulkResult(null);
     try {
       const apartmentId = localStorage.getItem("apartment_id");
-      const flatIds = displayFlats.map((entry) => entry.flat_id);
+      const flatIds = displayFlats.map(getBillFlatId).filter(Boolean);
       const res = await sendBulkBills(cycleId, 5, flatIds, apartmentId);
       setBulkResult({ type: "success", message: res.data.message || "Bulk send started." });
     } catch (err) {
@@ -175,7 +197,7 @@ function Bill() {
     const rows = displayFlats.map((entry) => [
       cycleLabel,
       entry.block_id,
-      entry.flat_id,
+      getDisplayFlatNumber(entry),
       entry.resident_name,
       entry.consumption_adjusted,
       effectiveTariff,
@@ -284,7 +306,7 @@ function Bill() {
                 >
                   Download as CSV
                 </button>
-                {/* <button
+                <button
                   type="button"
                   onClick={handleSendBulkBills}
                   disabled={loading || !displayFlats.length || bulkSending}
@@ -292,7 +314,7 @@ function Bill() {
                   className="rounded-lg bg-[#00A877] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#008f64] disabled:cursor-not-allowed disabled:bg-[#9dd8c4]"
                 >
                   {bulkSending ? "Sending..." : "Send bill"}
-                </button> */}
+                </button>
               </div>
             </div>
             {bulkResult && (
@@ -340,7 +362,7 @@ function Bill() {
                     <th className="px-4 py-3">Resident</th>
                     <th className="px-4 py-3 text-right">Consumption (L)</th>
                     <th className="px-4 py-3 text-right">Projected amount</th>
-                    {/* <th className="px-4 py-3 text-center">Action</th> */}
+                    <th className="px-4 py-3 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
@@ -355,11 +377,12 @@ function Bill() {
                     </tr>
                   ) : displayFlats.length ? (
                     displayFlats.map((entry) => {
-                      const sendStatus = flatSendState[entry.flat_id];
+                      const flatId = getBillFlatId(entry);
+                      const sendStatus = flatSendState[flatId];
                       return (
-                        <tr key={entry.flat_id} className="hover:bg-gray-50">
+                        <tr key={flatId || getDisplayFlatNumber(entry)} className="hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium text-gray-900">
-                            {entry.flat_id}
+                            {getDisplayFlatNumber(entry)}
                           </td>
                           <td className="px-4 py-3 text-gray-700">
                             {entry.resident_name}
@@ -370,13 +393,17 @@ function Bill() {
                           <td className="px-4 py-3 text-right text-gray-900">
                             {formatCurrency(entry.projected_amount_adjusted)}
                           </td>
-                          {/* <td className="px-4 py-3 text-center">
+                          <td className="px-4 py-3 text-center">
                             {sendStatus === "sent" ? (
                               <span className="text-xs font-medium text-emerald-600">Sent</span>
+                            ) : sendStatus === "missing-email" ? (
+                              <span className="text-xs font-medium text-amber-600">
+                                No email
+                              </span>
                             ) : sendStatus === "error" ? (
                               <button
                                 type="button"
-                                onClick={() => handleSendFlatBill(entry.flat_id)}
+                                onClick={() => handleSendFlatBill(entry)}
                                 className="text-xs font-medium text-red-500 underline hover:text-red-700"
                                 title="Send failed - click to retry"
                               >
@@ -385,15 +412,19 @@ function Bill() {
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => handleSendFlatBill(entry.flat_id)}
+                                onClick={() => handleSendFlatBill(entry)}
                                 disabled={sendStatus === "sending"}
-                                title={`Send bill to ${entry.resident_name}`}
+                                title={
+                                  entry.resident_email
+                                    ? `Send bill to ${entry.resident_email}`
+                                    : "No resident email found"
+                                }
                                 className="rounded-md border border-[#00A877] px-3 py-1 text-xs font-medium text-[#00A877] transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                               >
                                 {sendStatus === "sending" ? "Sending..." : "Send"}
                               </button>
                             )}
-                          </td> */}
+                          </td>
                         </tr>
                       );
                     })

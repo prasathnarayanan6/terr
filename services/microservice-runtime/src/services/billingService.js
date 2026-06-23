@@ -11,7 +11,8 @@ import {
 
 const APARTMENT_ID_FIELDS = ["apartment_id", "apartmentId"];
 const DEVICE_ID_FIELDS = ["device_id", "deviceId", "meter_id", "meterId", "sensor_id", "sensorId"];
-const FLAT_ID_FIELDS = ["flat_number", "flatNumber", "flat_no", "flatNo", "flat_id", "flatId", "unit_id", "unitId"];
+const FLAT_ID_FIELDS = ["flat_id", "flatId", "unit_id", "unitId"];
+const FLAT_NUMBER_FIELDS = ["flat_number", "flatNumber", "flat_no", "flatNo"];
 
 const getFirstValue = (source, fields) => {
   for (const field of fields) {
@@ -29,8 +30,11 @@ const keyFor = (value) => normalizeText(value).toLowerCase();
 const normalizeApartmentId = (source) => normalizeText(getFirstValue(source, APARTMENT_ID_FIELDS));
 const normalizeDeviceId = (source) => normalizeText(getFirstValue(source, DEVICE_ID_FIELDS));
 const normalizeFlatId = (source) => normalizeText(getFirstValue(source, FLAT_ID_FIELDS));
+const normalizeFlatNumber = (source) => normalizeText(getFirstValue(source, FLAT_NUMBER_FIELDS));
 const normalizeTimestamp = (source) =>
   normalizeText(getFirstValue(source, ["timestamp", "created_at", "createdAt", "time", "date"]));
+const uniqueKeys = (...values) =>
+  Array.from(new Set(values.map(normalizeText).filter(Boolean)));
 
 const toIsoDate = (date) => date.toISOString().slice(0, 10);
 
@@ -143,7 +147,7 @@ const pushDevice = (devices, source = {}) => {
 
   devices.push({
     device_id: deviceId,
-    flat_id: normalizeFlatId(source),
+    flat_id: normalizeFlatId(source) || normalizeFlatNumber(source),
   });
 };
 
@@ -164,7 +168,9 @@ const extractDevices = (source = {}) => {
 };
 
 const normalizeFlatRecord = (source = {}) => {
-  const flatId = normalizeFlatId(source);
+  const explicitFlatId = normalizeFlatId(source);
+  const flatNumber = normalizeFlatNumber(source);
+  const flatId = explicitFlatId || flatNumber;
 
   if (!flatId) {
     return null;
@@ -172,8 +178,12 @@ const normalizeFlatRecord = (source = {}) => {
 
   return {
     flat_id: flatId,
-    block_id: normalizeBlockId(source, flatId),
-    resident_name: normalizeResidentName(source) || `Flat ${flatId}`,
+    flat_number: flatNumber || flatId,
+    canonical_flat_id: explicitFlatId,
+    bill_flat_id: explicitFlatId || flatId,
+    flat_aliases: uniqueKeys(explicitFlatId, flatNumber),
+    block_id: normalizeBlockId(source, flatNumber || flatId),
+    resident_name: normalizeResidentName(source) || `Flat ${flatNumber || flatId}`,
     resident_email: normalizeResidentEmail(source),
     resident_whatsapp: normalizeText(source.resident_whatsapp || source.residentWhatsapp || source.res_contact || source.resContact),
     devices: extractDevices(source),
@@ -183,6 +193,15 @@ const normalizeFlatRecord = (source = {}) => {
 
 const mergeFlatRecord = (target, source) => {
   target.block_id ||= source.block_id;
+  if (source.canonical_flat_id) {
+    target.flat_id = source.canonical_flat_id;
+    target.canonical_flat_id = source.canonical_flat_id;
+    target.bill_flat_id = source.canonical_flat_id;
+  } else {
+    target.bill_flat_id = target.canonical_flat_id || target.bill_flat_id || source.bill_flat_id;
+  }
+  target.flat_number = target.flat_number || source.flat_number || target.flat_id;
+  target.flat_aliases = uniqueKeys(...(target.flat_aliases || []), ...(source.flat_aliases || []), target.flat_id, target.flat_number);
   target.resident_name = source.resident_name || target.resident_name;
   target.resident_email = source.resident_email || target.resident_email;
   target.resident_whatsapp = source.resident_whatsapp || target.resident_whatsapp;
@@ -208,15 +227,20 @@ const addFlatRecord = (flatsByKey, source = {}) => {
     return;
   }
 
-  const flatKey = keyFor(flat.flat_id);
-  const existing = flatsByKey.get(flatKey);
+  const aliases = uniqueKeys(...(flat.flat_aliases || []), flat.flat_id, flat.flat_number);
+  const existing = aliases.map((alias) => flatsByKey.get(keyFor(alias))).find(Boolean);
+  const target = existing || flat;
 
   if (existing) {
-    mergeFlatRecord(existing, flat);
-  } else {
-    flatsByKey.set(flatKey, flat);
+    mergeFlatRecord(target, flat);
   }
+
+  uniqueKeys(...(target.flat_aliases || []), target.flat_id, target.flat_number).forEach((alias) => {
+    flatsByKey.set(keyFor(alias), target);
+  });
 };
+
+const getUniqueFlats = (flatsByKey) => Array.from(new Set(flatsByKey.values()));
 
 const buildFlatMetadata = ({ apartmentItems = [], deviceItems = [], userItems = [] }) => {
   const flatsByKey = new Map();
@@ -238,10 +262,10 @@ const buildFlatMetadata = ({ apartmentItems = [], deviceItems = [], userItems = 
 const buildDeviceToFlatMap = (flatsByKey) => {
   const deviceToFlat = new Map();
 
-  flatsByKey.forEach((flat, flatKey) => {
+  getUniqueFlats(flatsByKey).forEach((flat) => {
     flat.devices.forEach((device) => {
       if (device.device_id) {
-        deviceToFlat.set(device.device_id, flatKey);
+        deviceToFlat.set(device.device_id, keyFor(flat.flat_id));
       }
     });
   });
@@ -318,7 +342,7 @@ const loadDeviceItems = async (apartmentId) => {
 };
 
 const flowBelongsToKnownFlat = (record, knownFlatKeys, deviceToFlat) => {
-  const flatId = normalizeFlatId(record);
+  const flatId = normalizeFlatId(record) || normalizeFlatNumber(record);
   const deviceId = normalizeDeviceId(record);
 
   return knownFlatKeys.has(keyFor(flatId)) || (deviceId && deviceToFlat.has(deviceId));
@@ -428,8 +452,12 @@ const ensureFlat = (flatsByKey, flatId, source = {}) => {
 
   const flat = {
     flat_id: flatId,
-    block_id: normalizeBlockId(source, flatId),
-    resident_name: normalizeResidentName(source) || `Flat ${flatId}`,
+    flat_number: normalizeFlatNumber(source) || flatId,
+    canonical_flat_id: normalizeFlatId(source),
+    bill_flat_id: normalizeFlatId(source) || flatId,
+    flat_aliases: uniqueKeys(flatId, normalizeFlatNumber(source)),
+    block_id: normalizeBlockId(source, normalizeFlatNumber(source) || flatId),
+    resident_name: normalizeResidentName(source) || `Flat ${normalizeFlatNumber(source) || flatId}`,
     resident_email: normalizeResidentEmail(source),
     resident_whatsapp: "",
     devices: extractDevices(source),
@@ -437,6 +465,7 @@ const ensureFlat = (flatsByKey, flatId, source = {}) => {
   };
 
   flatsByKey.set(flatKey, flat);
+  flat.flat_aliases.forEach((alias) => flatsByKey.set(keyFor(alias), flat));
   return flat;
 };
 
@@ -450,19 +479,20 @@ const buildConsumptionByFlat = ({ flowRecords = [], flatsByKey, deviceToFlat, re
     }
 
     const deviceId = normalizeDeviceId(record);
-    const recordFlatId = normalizeFlatId(record);
+    const recordFlatId = normalizeFlatId(record) || normalizeFlatNumber(record);
     const flatKey = keyFor(recordFlatId) || (deviceId ? deviceToFlat.get(deviceId) : "");
 
     if (!flatKey) {
       return;
     }
 
-    const flatId = flatsByKey.get(flatKey)?.flat_id || recordFlatId;
-    ensureFlat(flatsByKey, flatId, record);
-    consumptionByFlat.set(flatKey, (consumptionByFlat.get(flatKey) || 0) + sumFlowConsumption(record));
+    const flat = flatsByKey.get(flatKey) || ensureFlat(flatsByKey, recordFlatId, record);
+    const summaryKey = keyFor(flat.flat_id);
+    consumptionByFlat.set(summaryKey, (consumptionByFlat.get(summaryKey) || 0) + sumFlowConsumption(record));
   });
 
-  flatsByKey.forEach((flat, flatKey) => {
+  getUniqueFlats(flatsByKey).forEach((flat) => {
+    const flatKey = keyFor(flat.flat_id);
     if (consumptionByFlat.has(flatKey)) {
       return;
     }
@@ -487,7 +517,7 @@ const applyBillingRecordFallback = ({ billingRecord, flatsByKey, consumptionByFl
   }
 
   perFlat.forEach((entry) => {
-    const flatId = normalizeFlatId(entry);
+    const flatId = normalizeFlatId(entry) || normalizeFlatNumber(entry);
     if (!flatId) {
       return;
     }
@@ -505,15 +535,17 @@ const applyBillingRecordFallback = ({ billingRecord, flatsByKey, consumptionByFl
 };
 
 const buildPerFlatSummary = ({ flatsByKey, consumptionByFlat, tariffPerKl }) =>
-  Array.from(flatsByKey.values())
+  getUniqueFlats(flatsByKey)
     .map((flat) => {
       const consumption = Math.round(toFiniteNumber(consumptionByFlat.get(keyFor(flat.flat_id)), 0));
       const projectedAmount = Math.round((consumption / 1000) * tariffPerKl);
 
       return {
         flat_id: flat.flat_id,
-        block_id: flat.block_id || inferBlockFromFlatNumber(flat.flat_id) || "-",
-        resident_name: flat.resident_name || `Flat ${flat.flat_id}`,
+        flat_number: flat.flat_number || flat.flat_id,
+        bill_flat_id: flat.bill_flat_id || flat.flat_id,
+        block_id: flat.block_id || inferBlockFromFlatNumber(flat.flat_number || flat.flat_id) || "-",
+        resident_name: flat.resident_name || `Flat ${flat.flat_number || flat.flat_id}`,
         resident_email: flat.resident_email || "",
         resident_whatsapp: flat.resident_whatsapp || "",
         consumption_litres: consumption,
